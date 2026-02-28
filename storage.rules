@@ -1,0 +1,23 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    match /responses/{teacherId}/{allPaths=**} {
+
+      // Allow anyone to upload (students)
+      allow write: if true;
+
+      // Only the authenticated teacher can read
+      allow read: if request.auth != null
+        && request.auth.uid == teacherId;
+    }
+
+    match /backups/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(resourceTeacherId) {
+      return isAuthenticated() &&
+             resourceTeacherId == request.auth.uid;
+    }
+
+    // ============================
+    // TEACHERS
+    // ============================
+    match /teachers/{teacherId} {
+      allow read, write: if request.auth.uid == teacherId;
+    }
+
+    // ============================
+    // CLASSES
+    // ============================
+    match /classes/{classId} {
+      allow create: if isAuthenticated()
+        && request.resource.data.teacherId == request.auth.uid;
+
+      allow read, update, delete: if isOwner(resource.data.teacherId);
+    }
+
+    // ============================
+    // RESPONSES (SERVER ONLY)
+    // ============================
+    match /responses/{responseId} {
+
+      // ❌ No client-side creation anymore
+      allow create: if false;
+
+      // Only teacher can read/update/delete
+      allow read, update, delete: if request.auth != null
+        && resource.data.teacherId == request.auth.uid;
+    }
+
+    // ============================
+    // RATE LIMITS (SERVER ONLY)
+    // ============================
+    match /rateLimits/{studentId} {
+      allow read, write: if false;
+    }
+
+    // ============================
+    // LESSON STATE
+    // ============================
+    match /lessonState/{docId} {
+
+      // Students can read lesson status
+      allow read: if true;
+
+      // Only teachers can update
+      allow update: if request.auth != null
+        && exists(/databases/$(database)/documents/teachers/$(request.auth.uid));
+    }
+
+    // ============================
+    // BACKUPS (NEVER CLIENT ACCESS)
+    // ============================
+    match /backups/{date} {
+      allow read, write: if false;
+    }
+
+    // ============================
+    // BLOCK EVERYTHING ELSE
+    // ============================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

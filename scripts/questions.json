@@ -1,0 +1,218 @@
+[
+  {
+    "order": 1,
+    "category": "Drugs",
+    "title": "Drug Addiction and the Brain",
+    "text": "In Lesson 1, we learned how drug addiction affects the brain, including the reactions during drug use. Based on this, why might someone with a drug addiction continue using drugs? Use information from the lesson to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 2,
+    "category": "Drugs",
+    "title": "Depressants and Club Drugs",
+    "text": "In Lesson 2, we learned about the impact of depressants and club drugs on the brain and mood. Why are these substances appealing to some people, and how might this lead to repeated use? Use examples from the lesson to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 3,
+    "category": "Drugs",
+    "title": "Narcotics and Misuse",
+    "text": "Lesson 3 examined the effects of narcotics on the body and brain, including their pain-relieving properties and potential for addiction. What factors contribute to the misuse of narcotics, and why do some individuals find it challenging to stop using them? Support your response with information from Lesson 3.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 4,
+    "category": "Drugs",
+    "title": "Stimulants and Risk",
+    "text": "Lesson 4 discussed the effects of stimulants on the body and brain, including their ability to increase alertness and energy. What are some potential risks associated with the misuse of stimulants, and why might individuals be drawn to use them despite these risks? Use information from Lesson 4 to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 5,
+    "category": "Drugs",
+    "title": "Hallucinogens and Inhalants",
+    "text": "Lesson 5 introduced the concepts of hallucinogens and inhalants, discussing their definitions and effects on the mind and body. What are inhalants and hallucinogens, and what motivates individuals to use these substances despite potential risks? Use information from Lesson 5 to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 6,
+    "category": "Drugs",
+    "title": "Marijuana Effects",
+    "text": "Lesson 6 discussed marijuana, including its definitions, effects on the mind and body, and its legal status in various regions. What are the primary effects of marijuana, and what motivates individuals to use it despite potential risks? Use information from Lesson 6 to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 7,
+    "category": "Drugs",
+    "title": "Performance-Enhancing Drugs",
+    "text": "Lesson 7 explored performance-enhancing drugs, including their definitions, common types, and effects on physical performance. What motivates athletes and individuals to use these substances despite the potential health risks and ethical concerns? Use information from Lesson 7 to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 8,
+    "category": "Tobacco",
+    "title": "Tobacco Use and Risks",
+    "text": "Based on this lesson on tobacco use, what are two reasons people start using tobacco, and what are two health risks associated with tobacco use? Use information from the lesson to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 9,
+    "category": "Vaping",
+    "title": "Vaping Use and Health Risks",
+    "text": "Based on this lesson on vaping, what are two reasons people choose to use vaping products, and what are two health risks associated with vaping? Use information from the lesson to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 10,
+    "category": "Alcohol",
+    "title": "Alcohol Use and Consequences",
+    "text": "Based on this lesson on alcohol use, what are two reasons people choose to consume alcohol, and what are two health risks associated with excessive alcohol use? Use information from the lesson to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 11,
+    "category": "Nervous System",
+    "title": "Nervous System Response",
+    "text": "We constantly receive information (stimuli) from our environment. How does the nervous system detect, process, and respond to stimuli—such as a loud noise or a hot stove—to help the body react quickly and stay safe? Use specific concepts from the lesson to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 12,
+    "category": "Mental Health",
+    "title": "Self-Esteem and Well-Being",
+    "text": "The focal point for Lesson 1 was understanding your mental and emotional health. Please explain how low self-esteem can have adverse effects on well-being, and support your answer with information from the lesson.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 13,
+    "category": "Mental Health",
+    "title": "Fear: Helpful vs. Harmful",
+    "text": "Lesson 2 described the importance of understanding your emotions. Explain situations in which fear is a positive and helpful emotion. Then identify situations in which fear is a negative or unhealthy emotion. Support your answer with information from the lesson.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 14,
+    "category": "Mental Health",
+    "title": "Stress and the Health Triangle",
+    "text": "Lesson 3 outlined the importance of managing stress. How can stress impact each side of the health triangle? Explain the effects of stress on physical, mental, and social health, and support your answer with information from the lesson.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 15,
+    "category": "Mental Health",
+    "title": "Mental Health Disorders",
+    "text": "What are mental health disorders, and how can they affect a person’s daily life? Describe potential causes, their impact on well-being, and explain why it is important to seek support and treatment.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 16,
+    "category": "Nutrition",
+    "title": "Vitamins and Minerals",
+    "text": "What are the primary roles of vitamins and minerals in the human body? Describe how each contributes to overall health, provide examples of sources, and explain why a balanced intake is essential.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 17,
+    "category": "Nutrition",
+    "title": "Carbohydrates",
+    "text": "What is the role of carbohydrates in a balanced diet? How do carbohydrates contribute to the body’s overall health, and what factors determine the balance between their beneficial and harmful effects? Support your answer with information from the lesson.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 18,
+    "category": "Nutrition",
+    "title": "Fats in the Diet",
+    "text": "How do fats contribute to the body’s overall health, and what factors determine the balance between their beneficial and harmful effects? Support your answer with information from the lesson.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 19,
+    "category": "Nutrition",
+    "title": "Protein in the Diet",
+    "text": "What is the role of protein in a balanced diet? How does protein contribute to overall health, and what factors determine the balance between beneficial and excessive intake? Support your answer with information from the lesson.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 20,
+    "category": "Nutrition",
+    "title": "Fad Diets",
+    "text": "What are fad diets, and how do they impact overall health? Discuss their characteristics, potential short-term benefits, and long-term risks. Support your answer with information from the lesson.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 21,
+    "category": "Nutrition",
+    "title": "Eating Disorders",
+    "text": "What are eating disorders, and how do they impact physical and mental health? Discuss different types, potential causes, and the importance of seeking help for recovery.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 22,
+    "category": "Disease",
+    "title": "Immune System Response",
+    "text": "Imagine that a virus has entered the body. Describe how the immune system would respond to this pathogen, highlighting the roles of T-cells and B-cells. Use details from the lesson to support your answer.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 23,
+    "category": "Disease",
+    "title": "Disease Spread and Prevention",
+    "text": "Choose two disease types (bacteria, fungi, protozoa, or viruses) and explain how they spread and one way people can prevent infection from each.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 24,
+    "category": "Disease",
+    "title": "HIV Rates",
+    "text": "Why is the rate of HIV infection higher in developing countries compared to developed countries? Provide examples to support your explanation.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 25,
+    "category": "Disease",
+    "title": "Cancer Risk",
+    "text": "Explain how one lifestyle choice—such as smoking, excessive UV exposure, or poor diet—can increase the risk of cancer, and describe one way a person can reduce that risk.",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 26,
+    "category": "Disease",
+    "title": "Heart Disease Prevention",
+    "text": "Based on the information about heart disease prevention, what are two actions people can take in their everyday lives to reduce their risk?",
+    "released": true,
+    "active": true
+  },
+  {
+    "order": 27,
+    "category": "Endocrine System",
+    "title": "Endocrine System and Homeostasis",
+    "text": "How does the endocrine system help control growth, metabolism, and stress to keep the body in balance (homeostasis), and what can happen when this system does not work properly?",
+    "released": true,
+    "active": true
+  }
+]
