@@ -56,28 +56,29 @@ export default function StudentView() {
     return () => unsubscribe();
   }, [selectedClassId]);
 
-  /* ---------------- TIMER ---------------- */
+ /* ---------------- TIMER ---------------- */
 
-  useEffect(() => {
-    if (!recordingEndsAt || classPhase !== "recording") {
-      return;
-    }
+useEffect(() => {
+  if (!recordingEndsAt || classPhase !== "recording") {
+    return;
+  }
 
-    const updateTimer = () => {
-      const diff = Math.max(
-        0,
-        Math.ceil((recordingEndsAt - Date.now()) / 1000)
-    };
+  const updateTimer = () => {
+    const diff = Math.max(
+      0,
+      Math.ceil((recordingEndsAt - Date.now()) / 1000)
+    );
 
-    updateTimer();
+    // (optional) you can display this later
+    // console.log("Time left:", diff);
+  };
 
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
+  updateTimer();
 
-  }, [recordingEndsAt, classPhase]);
+  const interval = setInterval(updateTimer, 1000);
+  return () => clearInterval(interval);
 
-  const capitalize = (str) =>
-    str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}, [recordingEndsAt, classPhase]);
 
   /* ---------------- START SESSION ---------------- */
 
