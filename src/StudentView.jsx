@@ -60,7 +60,6 @@ export default function StudentView() {
 
   useEffect(() => {
     if (!recordingEndsAt || classPhase !== "recording") {
-      setTimeLeft(0);
       return;
     }
 
@@ -68,8 +67,6 @@ export default function StudentView() {
       const diff = Math.max(
         0,
         Math.ceil((recordingEndsAt - Date.now()) / 1000)
-      );
-      setTimeLeft(diff);
     };
 
     updateTimer();
