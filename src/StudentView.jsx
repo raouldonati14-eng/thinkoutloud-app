@@ -80,6 +80,8 @@ useEffect(() => {
 
 }, [recordingEndsAt, classPhase]);
 
+const capitalize = (str) =>
+  str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
   /* ---------------- START SESSION ---------------- */
 
   const startSession = async () => {
