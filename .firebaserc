@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "think-out-loud-40d3a"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

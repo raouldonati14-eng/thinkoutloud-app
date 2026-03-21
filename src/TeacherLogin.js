@@ -1,46 +1,48 @@
 import React, { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { auth, db } from "./firebase";
+import { auth } from "./firebase";
+import { useNavigate } from "react-router-dom";
 
-export default function TeacherLogin({ onLogin }) {
+export default function TeacherLogin() {
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const navigate = useNavigate(); // ✅ NEW
 
   const handleLogin = async () => {
+
+    console.log("LOGIN CLICKED");
+
+    if (!email || !password) {
+      alert("Please enter email and password");
+      return;
+    }
+
     try {
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+      setLoading(true);
 
-      const user = userCredential.user;
+      await signInWithEmailAndPassword(auth, email, password);
 
-      // 🔐 Check if teacher document exists
-      const teacherRef = doc(db, "teachers", user.uid);
-      const teacherSnap = await getDoc(teacherRef);
+      console.log("LOGIN SUCCESS");
 
-      if (!teacherSnap.exists()) {
-        // 🆕 Auto-create teacher document
-        await setDoc(teacherRef, {
-          name: user.email,
-          email: user.email,
-          classes: [], // Initially empty
-          createdAt: new Date()
-        });
-      }
-
-      onLogin();
+      // ✅ THIS FIXES YOUR PROBLEM
+      navigate("/teacher");
 
     } catch (error) {
-      console.error(error);
+
+      console.error("LOGIN ERROR:", error);
       alert(error.message);
+
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div style={{ padding: 40 }}>
+
       <h2>Teacher Login</h2>
 
       <input
@@ -59,7 +61,10 @@ export default function TeacherLogin({ onLogin }) {
         style={{ display: "block", marginBottom: 10 }}
       />
 
-      <button onClick={handleLogin}>Login</button>
+      <button onClick={handleLogin} disabled={loading}>
+        {loading ? "Logging in..." : "Login"}
+      </button>
+
     </div>
   );
 }

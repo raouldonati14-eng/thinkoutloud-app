@@ -1,110 +1,149 @@
+// ✅ StudentView.jsx (FINAL FIXED)
+
 import React, { useEffect, useState } from "react";
-import { doc, onSnapshot, collection, getDocs } from "firebase/firestore";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import EssentialQuestionScreen from "./screens/EssentialQuestionScreen";
 
 export default function StudentView() {
-  const [locked, setLocked] = useState(null);
 
-  const [classes, setClasses] = useState([]);
-  const [selectedClassCode, setSelectedClassCode] = useState("");
+  const [locked, setLocked] = useState(false);
+  const [classLoaded, setClassLoaded] = useState(false);
+
+  const [classData, setClassData] = useState(null);
+
+  const [classPhase, setClassPhase] = useState("instruction");
+  const [questionOpen, setQuestionOpen] = useState(false);
+
+  const [recordingEndsAt, setRecordingEndsAt] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(0);
+
+  const [joinCode, setJoinCode] = useState("");
+  const [selectedClassId, setSelectedClassId] = useState("");
 
   const [lastName, setLastName] = useState("");
   const [firstName, setFirstName] = useState("");
 
   const [student, setStudent] = useState(null);
 
-  const MAINTENANCE_MODE = false;
+  /* ---------------- LISTEN FOR CLASS ---------------- */
 
-  /* ---------------- LOAD CLASSES FROM FIRESTORE ---------------- */
   useEffect(() => {
-    const loadClasses = async () => {
-      const snapshot = await getDocs(collection(db, "classes"));
+    if (!selectedClassId) return;
 
-      const list = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+    const classRef = doc(db, "classes", selectedClassId);
 
-      setClasses(list);
-    };
-
-    loadClasses();
-  }, []);
-
-  /* ---------------- LISTEN FOR LOCK ---------------- */
-  useEffect(() => {
-    const lessonRef = doc(db, "lessonState", "current");
-
-    const unsubscribe = onSnapshot(lessonRef, (snap) => {
+    const unsubscribe = onSnapshot(classRef, (snap) => {
       if (snap.exists()) {
-        setLocked(snap.data().locked);
-      } else {
-        setLocked(false);
+        const data = snap.data();
+
+        console.log("CLASS DATA:", data);
+
+        setClassData(data);
+
+        setLocked(data.lessonLocked ?? false);
+        setClassPhase(data.classPhase ?? "instruction");
+        setQuestionOpen(data.questionOpen ?? false);
+
+        // ✅ FIX: handle Firestore timestamp
+        setRecordingEndsAt(
+          data.recordingEndsAt?.toMillis?.() ?? null
+        );
+
+        setClassLoaded(true);
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [selectedClassId]);
+
+  /* ---------------- TIMER ---------------- */
+
+  useEffect(() => {
+    if (!recordingEndsAt || classPhase !== "recording") {
+      setTimeLeft(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const diff = Math.max(
+        0,
+        Math.ceil((recordingEndsAt - Date.now()) / 1000)
+      );
+      setTimeLeft(diff);
+    };
+
+    updateTimer();
+
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+
+  }, [recordingEndsAt, classPhase]);
 
   const capitalize = (str) =>
     str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 
-  if (locked === null) {
-    return (
-      <div style={styles.centerScreen}>
-        <div style={styles.card}>Loading lesson...</div>
-      </div>
-    );
-  }
+  /* ---------------- START SESSION ---------------- */
 
-  if (MAINTENANCE_MODE) {
-    return (
-      <div style={styles.centerScreen}>
-        <div style={styles.card}>
-          <h2>🚧 Think Out Loud Temporarily Unavailable</h2>
-          <p>Please wait for your teacher’s instructions.</p>
-        </div>
-      </div>
-    );
-  }
+  const startSession = async () => {
+    const code = joinCode.trim().toUpperCase();
 
-  const handleStart = () => {
-    if (!selectedClassCode || !lastName.trim() || !firstName.trim()) return;
+    if (!code || !lastName || !firstName) {
+      alert("Please enter all fields.");
+      return;
+    }
 
-    const formattedName =
-      `${capitalize(lastName.trim())}, ${capitalize(firstName.trim())}`;
+    try {
+      const joinRef = doc(db, "joinCodes", code);
+      const joinSnap = await getDoc(joinRef);
 
-    setStudent(formattedName);
-  };
+      console.log("JOIN SNAP:", joinSnap.exists(), joinSnap.data());
 
-  const handleChangeStudent = () => {
-    setStudent(null);
-    setSelectedClassCode("");
-    setLastName("");
-    setFirstName("");
+      if (!joinSnap.exists()) {
+        alert("Invalid join code");
+        return;
+      }
+
+      const data = joinSnap.data();
+
+      console.log("JOIN DATA:", data);
+
+      const classId = data.classId;
+
+      if (!classId) {
+        console.error("Missing classId in joinCodes");
+        alert("Invalid class mapping");
+        return;
+      }
+
+      console.log("CLASS ID FOUND:", classId);
+
+      const formattedName =
+        `${capitalize(lastName.trim())}, ${capitalize(firstName.trim())}`;
+
+      setSelectedClassId(classId);
+      setStudent(formattedName);
+
+    } catch (err) {
+      console.error("Join FULL ERROR:", err);
+      alert("Unable to join class");
+    }
   };
 
   /* ---------------- ENTRY SCREEN ---------------- */
+
   if (!student) {
     return (
       <div style={styles.centerScreen}>
         <div style={styles.card}>
           <h2>Think Out Loud</h2>
-          <p>Please enter your information to begin.</p>
 
-          <select
-            value={selectedClassCode}
-            onChange={(e) => setSelectedClassCode(e.target.value)}
+          <input
+            placeholder="Join Code"
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
             style={styles.input}
-          >
-            <option value="">Select Class</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.className}
-              </option>
-            ))}
-          </select>
+          />
 
           <input
             placeholder="Last Name"
@@ -120,10 +159,18 @@ export default function StudentView() {
             style={styles.input}
           />
 
-          <button onClick={handleStart} style={styles.primaryButton}>
+          <button onClick={startSession} style={styles.primaryButton}>
             Start
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (!classLoaded) {
+    return (
+      <div style={styles.centerScreen}>
+        <div style={styles.card}>Loading lesson...</div>
       </div>
     );
   }
@@ -133,80 +180,95 @@ export default function StudentView() {
       <div style={styles.centerScreen}>
         <div style={styles.card}>
           <h2>🔒 Lesson Locked</h2>
-          <p>Please wait for your teacher to release the lesson.</p>
         </div>
       </div>
     );
   }
 
   /* ---------------- MAIN VIEW ---------------- */
+
   return (
     <div style={styles.page}>
       <div style={styles.topBar}>
-        <div>
-          <strong>{student}</strong>
-        </div>
-        <button onClick={handleChangeStudent} style={styles.linkButton}>
-          Change Student
-        </button>
+        <strong>{student}</strong>
       </div>
 
-      <EssentialQuestionScreen
-        student={student}
-        classCode={selectedClassCode}
-      />
+      {classPhase === "instruction" && (
+        <div style={styles.card}>
+          <h2>📘 Instruction</h2>
+        </div>
+      )}
+
+      {classPhase === "recording" && questionOpen && (
+        <EssentialQuestionScreen
+          student={student}
+          classCode={selectedClassId}
+          classData={classData}
+        />
+      )}
+
+      {classPhase === "recording" && !questionOpen && (
+        <div style={styles.card}>
+          <h2>⏸ Waiting</h2>
+        </div>
+      )}
+
+      {classPhase === "discussion" && (
+        <div style={styles.card}>
+          <h2>💬 Discussion</h2>
+        </div>
+      )}
+
+      {classPhase === "reflection" && (
+        <div style={styles.card}>
+          <h2>🧠 Reflection</h2>
+        </div>
+      )}
     </div>
   );
 }
 
+/* ---------------- STYLES ---------------- */
+
 const styles = {
-  page: {
-    minHeight: "100vh",
-    backgroundColor: "#f4f6f9",
-    padding: "20px"
-  },
   centerScreen: {
-    minHeight: "100vh",
-    backgroundColor: "#f4f6f9",
     display: "flex",
     justifyContent: "center",
-    alignItems: "center"
+    alignItems: "center",
+    height: "100vh",
+    background: "#f8f9fa"
   },
   card: {
-    backgroundColor: "white",
-    padding: "40px",
-    borderRadius: "12px",
-    boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
-    width: "100%",
-    maxWidth: "420px",
-    textAlign: "center"
+    background: "white",
+    padding: 30,
+    borderRadius: 10,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+    textAlign: "center",
+    width: 300
   },
   input: {
     width: "100%",
-    padding: "12px",
-    marginBottom: "15px",
-    borderRadius: "6px",
-    border: "1px solid #ccc",
-    fontSize: "16px"
+    padding: 10,
+    margin: "10px 0",
+    borderRadius: 6,
+    border: "1px solid #ccc"
   },
   primaryButton: {
     width: "100%",
-    padding: "12px",
-    backgroundColor: "#4dabf7",
+    padding: 10,
+    background: "#4dabf7",
     color: "white",
     border: "none",
-    borderRadius: "6px",
-    cursor: "pointer"
+    borderRadius: 6,
+    cursor: "pointer",
+    marginTop: 10
   },
-  linkButton: {
-    background: "none",
-    border: "none",
-    color: "#4dabf7",
-    cursor: "pointer"
+  page: {
+    padding: 20
   },
   topBar: {
     display: "flex",
     justifyContent: "space-between",
-    marginBottom: "20px"
+    marginBottom: 20
   }
 };

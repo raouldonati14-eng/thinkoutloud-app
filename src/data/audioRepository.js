@@ -2,13 +2,10 @@ import { ref, uploadBytes } from "firebase/storage";
 import { storage } from "../firebase";
 
 export const audioRepository = {
-  async uploadAudio(blob, classCode, student, questionId) {
-    const timestamp = Date.now();
 
-    const safeStudent = student.replace(/\s+/g, "_");
+  async uploadAudio(blob, classId, sessionId, responseId) {
 
-    // 🔥 New secure path structure
-    const path = `audio/${classCode}/${safeStudent}/q${questionId}/${timestamp}.webm`;
+    const path = `audio/${classId}/${sessionId}/${responseId}.webm`;
 
     const storageRef = ref(storage, path);
 
@@ -16,7 +13,7 @@ export const audioRepository = {
       contentType: "audio/webm"
     });
 
-    // Return storage path (not download URL)
     return path;
   }
+
 };

@@ -3,9 +3,12 @@ import {
   collection,
   query,
   where,
-  onSnapshot
+  onSnapshot,
+  doc,
+  setDoc,
+  addDoc
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import {
   LineChart,
   Line,
@@ -14,12 +17,64 @@ import {
   Tooltip,
   ResponsiveContainer
 } from "recharts";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import QuestionManager from "./QuestionManager";
 
 export default function AdminDashboard({ roleData }) {
+  console.log("ROLE DATA:", roleData);
   const [responses, setResponses] = useState([]);
   const [teachers, setTeachers] = useState([]);
 
-  /* ================= LOAD SCHOOL RESPONSES ================= */
+  const [newTeacherEmail, setNewTeacherEmail] = useState("");
+  const [newTeacherPassword, setNewTeacherPassword] = useState("");
+
+  const [newClassName, setNewClassName] = useState("");
+
+  /* ================= CREATE TEACHER ================= */
+  const handleCreateTeacher = async () => {
+    try {
+      const cred = await createUserWithEmailAndPassword(
+        auth,
+        newTeacherEmail,
+        newTeacherPassword
+      );
+
+      await setDoc(doc(db, "teachers", cred.user.uid), {
+        email: newTeacherEmail,
+        schoolId: roleData.schoolId,
+        createdAt: new Date(),
+        classes: []
+      });
+
+      alert("Teacher created!");
+      setNewTeacherEmail("");
+      setNewTeacherPassword("");
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
+    }
+  };
+
+  /* ================= CREATE CLASS ================= */
+  const handleCreateClass = async () => {
+    try {
+      await addDoc(collection(db, "classes"), {
+        className: newClassName,
+        schoolId: roleData.schoolId,
+        teacherId: null,
+        active: true,
+        createdAt: new Date()
+      });
+
+      alert("Class created!");
+      setNewClassName("");
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
+    }
+  };
+
+  /* ================= LOAD RESPONSES ================= */
   useEffect(() => {
     if (!roleData?.schoolId) return;
 
@@ -72,10 +127,7 @@ export default function AdminDashboard({ roleData }) {
       studentSet.add(r.student);
 
       if (!teacherStats[r.teacherId]) {
-        teacherStats[r.teacherId] = {
-          count: 0,
-          totalScore: 0
-        };
+        teacherStats[r.teacherId] = { count: 0, totalScore: 0 };
       }
 
       teacherStats[r.teacherId].count += 1;
@@ -121,75 +173,36 @@ export default function AdminDashboard({ roleData }) {
     }));
   }, [responses]);
 
-  /* ================= HEATMAP DATA ================= */
-  const heatmapData = useMemo(() => {
-    const teacherMap = {};
-
-    responses.forEach(r => {
-      if (!teacherMap[r.teacherId]) {
-        teacherMap[r.teacherId] = { low: 0, mid: 0, high: 0 };
-      }
-
-      if (r.score <= 1) teacherMap[r.teacherId].low++;
-      else if (r.score === 2) teacherMap[r.teacherId].mid++;
-      else if (r.score >= 3) teacherMap[r.teacherId].high++;
-    });
-
-    return Object.entries(teacherMap).map(([teacherId, stats]) => ({
-      teacherId,
-      ...stats
-    }));
-  }, [responses]);
-
-  /* ================= EXECUTIVE SUMMARY ================= */
-  const executiveSummary = useMemo(() => {
-    if (!analytics) return "";
-
-    const {
-      totalStudents,
-      totalResponses,
-      schoolAvg,
-      teacherLeaderboard
-    } = analytics;
-
-    const avg = parseFloat(schoolAvg);
-    const topTeacher = teacherLeaderboard?.[0];
-    const bottomTeacher =
-      teacherLeaderboard?.[teacherLeaderboard.length - 1];
-
-    let performanceLevel = "stable";
-    if (avg >= 2.5) performanceLevel = "strong";
-    else if (avg >= 2.0) performanceLevel = "developing";
-    else performanceLevel = "needs attention";
-
-    return `
-ThinkOutLoud School Performance Summary
-
-The school currently has ${totalStudents} active students
-and ${totalResponses} recorded responses.
-
-Overall performance is ${performanceLevel}
-with an average score of ${schoolAvg} out of 3.
-
-Top performing instruction is associated with teacher ${
-      topTeacher?.teacherId || "N/A"
-    } (avg ${topTeacher?.avg?.toFixed(2) || "0.00"}).
-
-Lowest performing instructional group is associated with teacher ${
-      bottomTeacher?.teacherId || "N/A"
-    } (avg ${bottomTeacher?.avg?.toFixed(2) || "0.00"}).
-
-Strategic Recommendation:
-Focus coaching on low-performing groups while studying
-high-performing classrooms for transferable practices.
-`;
-  }, [analytics]);
-
   return (
     <div style={styles.page}>
       <h2>🏫 School Admin Dashboard</h2>
 
-      {/* ANALYTICS CARDS */}
+      {/* ================= MANAGEMENT SECTION ================= */}
+      <div style={styles.managementSection}>
+        <h3>Create Teacher</h3>
+        <input
+          placeholder="Teacher Email"
+          value={newTeacherEmail}
+          onChange={(e) => setNewTeacherEmail(e.target.value)}
+        />
+        <input
+          type="password"
+          placeholder="Temporary Password"
+          value={newTeacherPassword}
+          onChange={(e) => setNewTeacherPassword(e.target.value)}
+        />
+        <button onClick={handleCreateTeacher}>Create Teacher</button>
+
+        <h3 style={{ marginTop: 30 }}>Create Class</h3>
+        <input
+          placeholder="Class Name"
+          value={newClassName}
+          onChange={(e) => setNewClassName(e.target.value)}
+        />
+        <button onClick={handleCreateClass}>Create Class</button>
+      </div>
+
+      {/* ================= ANALYTICS ================= */}
       {analytics && (
         <div style={styles.analytics}>
           <Card title="Students" value={analytics.totalStudents} />
@@ -198,89 +211,25 @@ high-performing classrooms for transferable practices.
           <Card title="Teachers" value={teachers.length} />
         </div>
       )}
+{trendData?.length > 0 && (
+  <div style={styles.section}>
+    <h3>School Performance Trend</h3>
+    <ResponsiveContainer width="100%" height={250}>
+      <LineChart data={trendData}>
+        <XAxis dataKey="date" />
+        <YAxis domain={[0, 3]} />
+        <Tooltip />
+        <Line type="monotone" dataKey="avg" stroke="#4dabf7" strokeWidth={3} />
+      </LineChart>
+    </ResponsiveContainer>
+  </div>
+)}
 
-      {/* EXECUTIVE SUMMARY */}
-      {executiveSummary && (
-        <div style={styles.section}>
-          <h3>🧠 Executive Summary</h3>
-          <div style={styles.summaryCard}>
-            <pre style={styles.summaryText}>
-              {executiveSummary}
-            </pre>
-          </div>
-        </div>
-      )}
-
-      {/* SCHOOL TREND */}
-      {trendData.length > 0 && (
-        <div style={styles.section}>
-          <h3>School Performance Trend</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={trendData}>
-              <XAxis dataKey="date" />
-              <YAxis domain={[0, 3]} />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="avg"
-                stroke="#4dabf7"
-                strokeWidth={3}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {/* TEACHER LEADERBOARD */}
-      {analytics?.teacherLeaderboard?.length > 0 && (
-        <div style={styles.section}>
-          <h3>Teacher Leaderboard</h3>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Teacher ID</th>
-                <th>Average Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {analytics.teacherLeaderboard.map((t, i) => (
-                <tr key={t.teacherId}>
-                  <td>{i + 1}</td>
-                  <td>{t.teacherId}</td>
-                  <td>{t.avg.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* PERFORMANCE HEATMAP */}
-      {heatmapData.length > 0 && (
-        <div style={styles.section}>
-          <h3>Performance Heatmap</h3>
-
-          <div style={styles.heatmapGrid}>
-            <div></div>
-            <div style={styles.heatHeader}>Low (0–1)</div>
-            <div style={styles.heatHeader}>Mid (2)</div>
-            <div style={styles.heatHeader}>High (3)</div>
-
-            {heatmapData.map(row => (
-              <React.Fragment key={row.teacherId}>
-                <div style={styles.teacherLabel}>
-                  {row.teacherId}
-                </div>
-                <HeatCell value={row.low} color="#ff6b6b" />
-                <HeatCell value={row.mid} color="#ffd43b" />
-                <HeatCell value={row.high} color="#40c057" />
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+{/* ================= QUESTION MANAGER ================= */}
+<div style={{ ...styles.section, marginTop: 50 }}>
+  <QuestionManager />
+</div>
+</div>
   );
 }
 
@@ -294,31 +243,23 @@ function Card({ title, value }) {
   );
 }
 
-function HeatCell({ value, color }) {
-  const intensity = Math.min(value / 10, 1);
-  return (
-    <div
-      style={{
-        background: color,
-        opacity: intensity,
-        padding: 12,
-        borderRadius: 6,
-        textAlign: "center",
-        fontWeight: "bold",
-        color: "white"
-      }}
-    >
-      {value}
-    </div>
-  );
-}
-
 /* ================= STYLES ================= */
 const styles = {
   page: {
     padding: 40,
     background: "#f8f9fa",
     minHeight: "100vh"
+  },
+  managementSection: {
+    background: "white",
+    padding: 25,
+    borderRadius: 14,
+    marginBottom: 30,
+    boxShadow: "0 8px 20px rgba(0,0,0,0.05)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    maxWidth: 500
   },
   analytics: {
     display: "flex",
@@ -344,34 +285,5 @@ const styles = {
   },
   section: {
     marginTop: 40
-  },
-  summaryCard: {
-    background: "white",
-    padding: 25,
-    borderRadius: 14,
-    boxShadow: "0 8px 20px rgba(0,0,0,0.05)"
-  },
-  summaryText: {
-    whiteSpace: "pre-wrap",
-    fontFamily: "inherit",
-    lineHeight: 1.6
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    background: "white"
-  },
-  heatmapGrid: {
-    display: "grid",
-    gridTemplateColumns: "200px repeat(3, 1fr)",
-    gap: 10,
-    alignItems: "center"
-  },
-  heatHeader: {
-    fontWeight: "bold",
-    textAlign: "center"
-  },
-  teacherLabel: {
-    fontWeight: 500
   }
 };

@@ -1,3 +1,4 @@
+
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -10,11 +11,13 @@ const db = admin.firestore();
 /* ======================================================
    SUBMIT STUDENT RESPONSE
 ====================================================== */
+
 export const submitStudentResponse = onCall(
   { region: "us-central1" },
   async (request) => {
 
     const {
+      responseId,
       classCode,
       questionId,
       student,
@@ -24,18 +27,31 @@ export const submitStudentResponse = onCall(
       audioURL
     } = request.data;
 
+    /* ================= VALIDATION ================= */
+
+    if (!responseId) {
+      throw new HttpsError("invalid-argument", "Missing responseId.");
+    }
+
     if (!classCode || !questionId || !student || !durationSeconds || !audioURL) {
       throw new HttpsError("invalid-argument", "Missing required fields.");
     }
 
-    const classSnap = await db.doc(`classes/${classCode}`).get();
+    const classId = classCode;
+
+    /* ================= LOAD CLASS ================= */
+
+    const classSnap = await db.doc(`classes/${classId}`).get();
+
     if (!classSnap.exists) {
       throw new HttpsError("not-found", "Class not found.");
     }
 
-    const classData = classSnap.data();
-    const teacherId = classData?.teacherId;
-    const className = classData?.className;
+    const classData = classSnap.data() || {};
+
+    const teacherId = classData.teacherId;
+    const schoolId = classData.schoolId || null;
+    const districtId = classData.districtId || null;
 
     if (!teacherId) {
       throw new HttpsError("internal", "Class missing teacher.");
@@ -43,8 +59,10 @@ export const submitStudentResponse = onCall(
 
     /* ================= SCORING ================= */
 
+    const safeTranscript = (transcript || "").toLowerCase();
+
     const reasoningWords =
-      transcript?.toLowerCase().match(
+      safeTranscript.match(
         /because|therefore|since|evidence|so that|for example|this shows/g
       ) || [];
 
@@ -55,12 +73,15 @@ export const submitStudentResponse = onCall(
 
     const reasoningDetected = reasoningWords.length > 0;
 
-    /* ================= SAVE ================= */
+    /* ================= UPDATE RESPONSE ================= */
 
-    await db.collection("responses").add({
-      classCode,
-      className,
+    const responseRef = db.collection("responses").doc(responseId);
+
+    await responseRef.update({
+      classId,
       teacherId,
+      schoolId,
+      districtId,
       questionId,
       student,
       category: category || "General",
@@ -69,18 +90,79 @@ export const submitStudentResponse = onCall(
       audioURL,
       score,
       reasoningDetected,
+      status: "graded",
       completed: true,
       deleted: false,
       timestamp: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    return { success: true, score, reasoningDetected };
+    /* ================= UPDATE CLASS ANALYTICS ================= */
+
+    const analyticsRef = db.doc(`classAnalytics/${classId}`);
+
+    await db.runTransaction(async (transaction) => {
+
+      const analyticsSnap = await transaction.get(analyticsRef);
+
+      if (!analyticsSnap.exists) {
+
+        transaction.set(analyticsRef, {
+          totalResponses: 1,
+          totalScore: score,
+          reasoningResponses: reasoningDetected ? 1 : 0,
+          avgScore: score,
+          reasoningRate: reasoningDetected ? 1 : 0,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+      } else {
+
+        const data = analyticsSnap.data() || {};
+
+        const totalResponses = (data.totalResponses || 0) + 1;
+        const totalScore = (data.totalScore || 0) + score;
+        const reasoningResponses =
+          (data.reasoningResponses || 0) + (reasoningDetected ? 1 : 0);
+
+        transaction.update(analyticsRef, {
+          totalResponses,
+          totalScore,
+          reasoningResponses,
+          avgScore: totalScore / totalResponses,
+          reasoningRate: reasoningResponses / totalResponses,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+      }
+
+    });
+
+    /* ================= LOGGING ================= */
+
+    logger.info("Student response graded", {
+      classId,
+      student,
+      questionId,
+      score,
+      reasoningDetected
+    });
+
+    /* ================= RETURN RESULT ================= */
+
+    return {
+      success: true,
+      responseId,
+      score,
+      reasoningDetected
+    };
+
   }
 );
 
 /* ======================================================
    DAILY FIRESTORE BACKUP
 ====================================================== */
+
 export const dailyFirestoreBackup = onSchedule(
   {
     region: "us-central1",
@@ -97,6 +179,7 @@ export const dailyFirestoreBackup = onSchedule(
     let count = 0;
 
     for (const doc of snapshot.docs) {
+
       batch.set(
         backupRef.collection("responses").doc(doc.id),
         doc.data()
@@ -109,17 +192,20 @@ export const dailyFirestoreBackup = onSchedule(
         batch = db.batch();
         count = 0;
       }
+
     }
 
     if (count > 0) await batch.commit();
 
     logger.info(`Backup complete for ${date}`);
+
   }
 );
 
 /* ======================================================
    AUDIO VALIDATION
 ====================================================== */
+
 export const validateAudioUpload = onObjectFinalized(
   {
     region: "us-central1",
@@ -133,6 +219,7 @@ export const validateAudioUpload = onObjectFinalized(
     if (!file.name.startsWith("audio/")) return;
 
     const MAX_SIZE_BYTES = 10 * 1024 * 1024;
+
     const bucket = admin.storage().bucket();
     const fileRef = bucket.file(file.name);
 
@@ -147,111 +234,6 @@ export const validateAudioUpload = onObjectFinalized(
     }
 
     logger.info("Audio validated:", file.name);
-  }
-);
 
-/* ======================================================
-   RESET CLASS DATA (Secure + Batched)
-====================================================== */
-export const resetClassData = onCall(
-  { region: "us-central1" },
-  async (request) => {
-
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Login required.");
-    }
-
-    const { classCode } = request.data;
-    if (!classCode) {
-      throw new HttpsError("invalid-argument", "Class code required.");
-    }
-
-    const teacherUid = request.auth.uid;
-    const classSnap = await db.doc(`classes/${classCode}`).get();
-
-    if (!classSnap.exists) {
-      throw new HttpsError("not-found", "Class not found.");
-    }
-
-    if (classSnap.data()?.teacherId !== teacherUid) {
-      throw new HttpsError("permission-denied", "Not your class.");
-    }
-
-    const responsesSnap = await db
-      .collection("responses")
-      .where("classCode", "==", classCode)
-      .where("deleted", "!=", true)
-      .get();
-
-    let batch = db.batch();
-    let count = 0;
-
-    for (const doc of responsesSnap.docs) {
-      batch.update(doc.ref, { deleted: true });
-      count++;
-
-      if (count === 400) {
-        await batch.commit();
-        batch = db.batch();
-        count = 0;
-      }
-    }
-
-    if (count > 0) await batch.commit();
-
-    return { success: true };
-  }
-);
-
-/* ======================================================
-   RESTORE CLASS DATA
-====================================================== */
-export const restoreClassData = onCall(
-  { region: "us-central1" },
-  async (request) => {
-
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Login required.");
-    }
-
-    const { classCode } = request.data;
-    if (!classCode) {
-      throw new HttpsError("invalid-argument", "Class code required.");
-    }
-
-    const teacherUid = request.auth.uid;
-    const classSnap = await db.doc(`classes/${classCode}`).get();
-
-    if (!classSnap.exists) {
-      throw new HttpsError("not-found", "Class not found.");
-    }
-
-    if (classSnap.data()?.teacherId !== teacherUid) {
-      throw new HttpsError("permission-denied", "Not your class.");
-    }
-
-    const deletedResponses = await db
-      .collection("responses")
-      .where("classCode", "==", classCode)
-      .where("deleted", "==", true)
-      .get();
-
-    let batch = db.batch();
-    let count = 0;
-
-    for (const doc of deletedResponses.docs) {
-      batch.update(doc.ref, { deleted: false });
-      count++;
-
-      if (count === 400) {
-        await batch.commit();
-        batch = db.batch();
-        count = 0;
-      }
-    }
-
-    if (count > 0) await batch.commit();
-
-    return { success: true };
   }
 );

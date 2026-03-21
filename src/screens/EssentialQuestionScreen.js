@@ -1,134 +1,162 @@
+// ✅ EssentialQuestionScreen.jsx (FIXED + SAFE)
+
 import React, { useEffect, useState } from "react";
+import { db } from "../firebase";
 import {
-  collection,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
   doc,
   getDoc,
-  setDoc
+  collection,
+  getDocs,
+  query,
+  where
 } from "firebase/firestore";
-import { db } from "../firebase";
-import RecordingScreen from "./RecordingScreen";
-import FeedbackScreen from "./FeedbackScreen";
 
-export default function EssentialQuestionScreen({ student, classCode }) {
-  const [questions, setQuestions] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [feedback, setFeedback] = useState(null);
+import ThinkOutLoudRecorder from "../components/ThinkOutLoudRecorder";
+
+export default function EssentialQuestionScreen({ classCode, student, classData }) {
+
   const [loading, setLoading] = useState(true);
-  const [classCategory, setClassCategory] = useState(null);
-
-  /* ================= LOAD CLASS CATEGORY ================= */
-
-  useEffect(() => {
-    const loadClass = async () => {
-      if (!classCode) return;
-
-      const classRef = doc(db, "classes", classCode);
-      const snap = await getDoc(classRef);
-
-      if (snap.exists()) {
-        setClassCategory(snap.data().category);
-      }
-    };
-
-    loadClass();
-  }, [classCode]);
-
-  /* ================= LOAD QUESTIONS ================= */
+  const [question, setQuestion] = useState(null);
+  const [spotlight, setSpotlight] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
 
   useEffect(() => {
-    if (!classCategory) return;
 
-    const q = query(
-      collection(db, "questions"),
-      where("category", "==", classCategory),
-      where("released", "==", true),
-      where("active", "==", true),
-      orderBy("order", "asc")
-    );
+    if (!classCode || !classData) return;
 
-    const unsubscribe = onSnapshot(q, snapshot => {
-      const loaded = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+    const loadData = async () => {
 
-      setQuestions(loaded);
-      setLoading(false);
-    });
+      console.log("Class updated:", classData);
 
-    return () => unsubscribe();
-  }, [classCategory]);
+      const activeSessionId = classData.activeSessionId;
+      setSessionId(activeSessionId);
 
-  /* ================= LOAD STUDENT PROGRESS ================= */
+      /* ---------- SPOTLIGHT ---------- */
 
-  useEffect(() => {
-    const loadProgress = async () => {
-      const progressRef = doc(db, "studentProgress", student);
-      const snap = await getDoc(progressRef);
+      if (classData.spotlightResponseId && activeSessionId) {
 
-      if (snap.exists()) {
-        setCurrentIndex(snap.data().lastCompleted || 0);
+        try {
+          const responseRef = doc(
+            db,
+            "classes",
+            classCode,
+            "sessions",
+            activeSessionId,
+            "responses",
+            classData.spotlightResponseId
+          );
+
+          const responseSnap = await getDoc(responseRef);
+
+          if (responseSnap.exists()) {
+            setSpotlight(responseSnap.data());
+          }
+
+        } catch (err) {
+          console.error("Spotlight load error:", err);
+        }
+
       } else {
-        await setDoc(progressRef, { lastCompleted: 0 });
-        setCurrentIndex(0);
+        setSpotlight(null);
       }
+
+      /* ---------- QUESTION ---------- */
+
+      if (!classData.questionOpen) {
+        console.log("Question not open yet");
+        setQuestion(null);
+        setLoading(false);
+        return;
+      }
+
+      // 🔥 CRITICAL FIX: Prevent undefined query values
+      if (
+        !classData.category ||
+        classData.currentLesson === undefined
+      ) {
+        console.log("Waiting for valid class data...");
+        console.log("CATEGORY:", classData.category);
+        console.log("LESSON:", classData.currentLesson);
+
+        setLoading(false);
+        return;
+      }
+
+      try {
+
+        const q = query(
+          collection(db, "questions"),
+          where("category", "==", classData.category),
+          where("lesson", "==", classData.currentLesson)
+        );
+
+        const snap = await getDocs(q);
+
+        const allQuestions = snap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        console.log("ALL QUESTIONS:", allQuestions);
+        console.log("CURRENT QUESTION:", classData.currentQuestion);
+
+        // ✅ TYPE SAFE MATCH
+        const match = allQuestions.find(
+          q => Number(q.order) === Number(classData.currentQuestion)
+        );
+
+        console.log("Matched question:", match);
+
+        setQuestion(match || null);
+
+      } catch (err) {
+        console.error("Question query error:", err);
+      }
+
+      setLoading(false);
     };
 
-    if (student) loadProgress();
-  }, [student]);
+    loadData();
 
-  if (loading) return <div>Loading questions…</div>;
+  }, [classCode, classData]);
 
-  if (!questions.length) {
-    return <div>No active questions available.</div>;
+  /* ---------- UI ---------- */
+
+  if (loading) return <div style={{ padding: 40 }}>Loading…</div>;
+
+  if (!question) {
+    return <div style={{ padding: 40 }}>Waiting for your teacher...</div>;
   }
 
-  const currentQuestion = questions[currentIndex];
-
-  const handleRecordingComplete = (responseData) => {
-    setFeedback({
-      ...responseData,
-      student,
-      classCode,
-      questionId: currentQuestion.order,
-      category: currentQuestion.category
-    });
-  };
-
-  const handleNext = async () => {
-    const nextIndex = currentIndex + 1;
-
-    await setDoc(doc(db, "studentProgress", student), {
-      lastCompleted: nextIndex,
-      classCode
-    });
-
-    setFeedback(null);
-    setCurrentIndex(nextIndex);
-  };
-
   return (
-    <>
-      {!feedback ? (
-        <RecordingScreen
-          question={currentQuestion}
-          questionId={currentQuestion.order}
-          category={currentQuestion.category}
-          student={student}
-          classCode={classCode}
-          onComplete={handleRecordingComplete}
-        />
-      ) : (
-        <FeedbackScreen
-          question={currentQuestion}
-          feedback={feedback}
-          onNext={handleNext}
-        />
+    <div style={{ padding: 40 }}>
+
+      {/* ---------- SPOTLIGHT ---------- */}
+      {spotlight && (
+        <div style={{
+          background: "#fff9db",
+          padding: 20,
+          marginBottom: 20,
+          borderRadius: 10
+        }}>
+          <h2>💡 {spotlight.student}</h2>
+          <p>"{spotlight.transcript}"</p>
+        </div>
       )}
-    </>
+
+      {/* ---------- QUESTION ---------- */}
+      <h1>{question.title}</h1>
+      <p style={{ fontSize: 18 }}>{question.text}</p>
+
+      {/* ---------- RECORDER ---------- */}
+      <ThinkOutLoudRecorder
+        student={student}
+        classCode={classCode}
+        questionId={question.id}
+        category={question.category}
+        sessionId={sessionId}
+      />
+
+    </div>
   );
 }

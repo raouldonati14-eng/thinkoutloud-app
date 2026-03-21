@@ -1,513 +1,377 @@
 import React, { useEffect, useState, useMemo } from "react";
 import {
+  doc,
+  onSnapshot,
   collection,
   query,
-  where,
-  getDocs,
-  onSnapshot
+  orderBy,
+  limit,
+  setDoc,
+  updateDoc
 } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { db, auth } from "../firebase";
-import ClassManager from "../components/teacher/ClassManager";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer
-} from "recharts";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 
-/* ================= AUDIO PLAYER ================= */
+import { db } from "../firebase";
+ import { getDocs, where } from "firebase/firestore"; // add at top if missing
+/* -------- Panels -------- */
 
-function AudioPlayer({ url }) {
-  if (!url) return <span style={{ color: "red" }}>No audio</span>;
-  return <audio controls style={{ width: 150 }} src={url} />;
-}
+import SubmissionProgressPanel from "../components/teacher/SubmissionProgressPanel";
+import RecordingTickerPanel from "../components/teacher/RecordingTickerPanel";
+import LiveResponseGrid from "../components/teacher/LiveResponseGrid";
+import QuestionStatusPanel from "../components/teacher/QuestionStatusPanel";
+import LiveTranscriptFeed from "../components/teacher/LiveTranscriptFeed";
+import TeacherSpotlightPanel from "../components/teacher/TeacherSpotlightPanel";
+import TeacherTimelinePanel from "../components/teacher/TeacherTimelinePanel";
+import ReasoningAnalyticsPanel from "../components/ReasoningAnalyticsPanel";
+import ReasoningHighlightsPanel from "../components/ReasoningHighlightsPanel";
+import ReasoningHeatmapPanel from "../components/teacher/ReasoningHeatmapPanel";
+import ThinkingPatternsPanel from "../components/teacher/ThinkingPatternsPanel";
+import CounterargumentPanel from "../components/teacher/CounterargumentPanel";
+import AnalyticsSummary from "../components/teacher/AnalyticsSummary";
+import SuggestedResponsesPanel from "../components/teacher/SuggestedResponsesPanel";
+import DominantReasoningThemes from "../components/teacher/DominantReasoningThemes";
+import ReasoningGapDetector from "../components/teacher/ReasoningGapDetector";
+import TeacherPromptEngine from "../components/teacher/TeacherPromptEngine";
 
-/* ================= DASHBOARD ================= */
+/* -------- Dashboard -------- */
 
-export default function TeacherDashboard() {
-  const teacher = auth.currentUser;
+export default function TeacherDashboard({ classId }) {
 
+  const [classData, setClassData] = useState(null);
   const [responses, setResponses] = useState([]);
-  const [classes, setClasses] = useState([]);
-  const [selectedClassCode, setSelectedClassCode] = useState(null);
-  const [filterStudent, setFilterStudent] = useState("");
-  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
+  const [prompts, setPrompts] = useState([]);
+  const [copied, setCopied] = useState(false);
 
-  /* ================= LOAD CLASSES ================= */
+  /* -------- CLASS LISTENER -------- */
 
   useEffect(() => {
-    if (!teacher) return;
+    if (!classId) return;
 
-    const loadClasses = async () => {
-      const q = query(
-        collection(db, "classes"),
-        where("teacherId", "==", teacher.uid)
-      );
+    const classRef = doc(db, "classes", classId);
 
-      const snap = await getDocs(q);
-      const list = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      setClasses(list);
-
-      if (list.length && !selectedClassCode) {
-        setSelectedClassCode(list[0].id);
+    const unsubscribe = onSnapshot(classRef, (snap) => {
+      if (snap.exists()) {
+        setClassData(snap.data());
       }
-    };
-
-    loadClasses();
-  }, [teacher]);
-
-  /* ================= LOAD RESPONSES ================= */
-
-  useEffect(() => {
-    if (!selectedClassCode) return;
-
-    const q = query(
-      collection(db, "responses"),
-      where("classCode", "==", selectedClassCode),
-      where("deleted", "!=", true)
-    );
-
-    const unsubscribe = onSnapshot(q, snapshot => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      setResponses(data);
     });
 
     return () => unsubscribe();
-  }, [selectedClassCode]);
+  }, [classId]);
 
-  const currentClass = classes.find(c => c.id === selectedClassCode);
+  /* -------- SESSION ID -------- */
 
-  /* ================= ANALYTICS ================= */
+  const sessionId = useMemo(() => {
+    return classData?.activeSessionId || null;
+  }, [classData]);
 
-  const analytics = useMemo(() => {
-    if (!responses.length) return null;
+  /* -------- RESPONSES -------- */
 
-    const total = responses.length;
-    const scores = responses.map(r => r.score || 0);
+  useEffect(() => {
+    if (!classId || !sessionId) return;
 
-    const avgScore =
-      scores.reduce((sum, s) => sum + s, 0) / total;
+    const responsesRef = query(
+      collection(db, "classes", classId, "sessions", sessionId, "responses"),
+      orderBy("timestamp", "desc"),
+      limit(50)
+    );
 
-    const reasoningPercent =
-      Math.round(
-        (responses.filter(r => r.reasoningDetected).length / total) * 100
-      );
+    const unsubscribe = onSnapshot(responsesRef, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setResponses(list);
+    });
 
-    const maxScore = Math.max(...scores);
-    const minScore = Math.min(...scores);
+    return () => unsubscribe();
+  }, [classId, sessionId]);
 
-    const scoreDistribution = {
-      level3: scores.filter(s => s === 3).length,
-      level2: scores.filter(s => s === 2).length,
-      level1: scores.filter(s => s === 1).length,
-      level0: scores.filter(s => s === 0).length
-    };
+  /* -------- ANALYTICS -------- */
 
-    const students = {};
+  const generateLiveAnalytics = (responses) => {
+    let strong = 0;
+    let partial = 0;
+    let support = 0;
+
     responses.forEach(r => {
-      if (!students[r.student]) students[r.student] = [];
-      students[r.student].push(r);
+      const score = r.score || 0;
+      if (score >= 3) strong++;
+      else if (score === 2) partial++;
+      else support++;
     });
-
-    let growthSum = 0;
-    let growthCount = 0;
-
-    Object.values(students).forEach(attempts => {
-      const sorted = attempts
-        .filter(a => a.timestamp)
-        .sort((a, b) => a.timestamp.toDate() - b.timestamp.toDate());
-
-      if (sorted.length >= 2) {
-        const first = sorted[0].score || 0;
-        const last = sorted[sorted.length - 1].score || 0;
-        growthSum += (last - first);
-        growthCount++;
-      }
-    });
-
-    const avgGrowth =
-      growthCount > 0 ? (growthSum / growthCount).toFixed(2) : null;
 
     return {
-      avgScore: avgScore.toFixed(2),
-      reasoningPercent,
-      total,
-      maxScore,
-      minScore,
-      scoreDistribution,
-      avgGrowth
+      totalResponses: responses.length,
+      strongReasoning: strong,
+      partialReasoning: partial,
+      needsSupport: support
     };
-  }, [responses]);
-/* ================= PERFORMANCE BANDS ================= */
-
-const performanceBands = useMemo(() => {
-  if (!analytics) return null;
-
-  const total = analytics.total;
-
-  const percent = (count) =>
-    total > 0 ? Math.round((count / total) * 100) : 0;
-
-  return {
-    advanced: {
-      count: analytics.scoreDistribution.level3,
-      percent: percent(analytics.scoreDistribution.level3)
-    },
-    proficient: {
-      count: analytics.scoreDistribution.level2,
-      percent: percent(analytics.scoreDistribution.level2)
-    },
-    emerging: {
-      count: analytics.scoreDistribution.level1,
-      percent: percent(analytics.scoreDistribution.level1)
-    },
-    foundational: {
-      count: analytics.scoreDistribution.level0,
-      percent: percent(analytics.scoreDistribution.level0)
-    }
   };
-}, [analytics]);
-  /* ================= GROWTH CHART DATA ================= */
 
-  const growthChartData = useMemo(() => {
-    if (!responses.length) return [];
+  useEffect(() => {
+    if (!classId || !sessionId) return;
 
-    const students = {};
-    responses.forEach(r => {
-      if (!students[r.student]) students[r.student] = [];
-      students[r.student].push(r);
-    });
+    const analyticsRef = doc(
+      db,
+      "classes",
+      classId,
+      "sessions",
+      sessionId,
+      "analytics",
+      "liveStats"
+    );
 
-    let maxAttempts = 0;
+    const analyticsData = generateLiveAnalytics(responses);
 
-    Object.values(students).forEach(attempts => {
-      if (attempts.length > maxAttempts) {
-        maxAttempts = attempts.length;
+    setDoc(analyticsRef, analyticsData, { merge: true });
+
+  }, [responses, classId, sessionId]);
+
+  useEffect(() => {
+    if (!classId || !sessionId) return;
+
+    const analyticsRef = doc(
+      db,
+      "classes",
+      classId,
+      "sessions",
+      sessionId,
+      "analytics",
+      "liveStats"
+    );
+
+    const unsubscribe = onSnapshot(analyticsRef, (snap) => {
+      if (snap.exists()) {
+        setAnalytics(snap.data());
       }
     });
 
-    const chartData = [];
+    return () => unsubscribe();
+  }, [classId, sessionId]);
 
-    for (let i = 0; i < maxAttempts; i++) {
-      let totalScore = 0;
-      let count = 0;
+  /* -------- PROMPTS -------- */
 
-      Object.values(students).forEach(attempts => {
-        const sorted = attempts
-          .filter(a => a.timestamp)
-          .sort((a, b) => a.timestamp.toDate() - b.timestamp.toDate());
+  useEffect(() => {
+    if (!classId || !sessionId) return;
 
-        if (sorted[i]) {
-          totalScore += sorted[i].score || 0;
-          count++;
-        }
-      });
+    const ref = doc(
+      db,
+      "classes",
+      classId,
+      "sessions",
+      sessionId,
+      "intelligence",
+      "prompts"
+    );
 
-      if (count > 0) {
-        chartData.push({
-          attempt: `Attempt ${i + 1}`,
-          average: Number((totalScore / count).toFixed(2))
-        });
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        setPrompts(snap.data()?.prompts || []);
+      } else {
+        setPrompts([]);
       }
-    }
+    });
 
-    return chartData;
-  }, [responses]);
+    return () => unsubscribe();
+  }, [classId, sessionId]);
 
-  /* ================= CLASS EXECUTIVE SUMMARY ================= */
+  /* -------- CONTROLS -------- */
 
-  const generateClassExecutiveSummary = () => {
-  if (!analytics) return "No data available.";
+  const classRef = doc(db, "classes", classId);
 
-  const avg = parseFloat(analytics.avgScore);
-  const reasoning = analytics.reasoningPercent;
-  const growth = analytics.avgGrowth;
-  const range = analytics.maxScore - analytics.minScore;
-  const total = analytics.total;
-  const dist = analytics.scoreDistribution;
+ const setPhase = async (phase) => {
+  let updateData = {
+    classPhase: phase,
+    lessonLocked: phase === "instruction"
+  };
 
-  /* ===== PERFORMANCE LEVEL ===== */
-  let performanceDescriptor = "developing foundational understanding";
-  if (avg >= 2.6) performanceDescriptor = "strong conceptual mastery";
-  else if (avg >= 2.2) performanceDescriptor = "proficient grade-level understanding";
-  else if (avg >= 1.7) performanceDescriptor = "emerging conceptual understanding";
-
-  /* ===== REASONING ANALYSIS ===== */
-  let reasoningDescriptor = "limited evidence of structured reasoning";
-  if (reasoning >= 75) reasoningDescriptor = "consistent and well-articulated analytical reasoning";
-  else if (reasoning >= 60) reasoningDescriptor = "developing analytical reasoning patterns";
-  else if (reasoning >= 45) reasoningDescriptor = "inconsistent use of reasoning language";
-
-  /* ===== GROWTH INTERPRETATION ===== */
-  let growthNarrative = "Growth data is limited due to single recorded attempts.";
-  if (growth !== null) {
-    const g = parseFloat(growth);
-    if (g >= 0.4)
-      growthNarrative = "Class-wide performance demonstrates strong upward academic momentum across repeated attempts.";
-    else if (g > 0)
-      growthNarrative = "Performance trends indicate measurable incremental improvement.";
-    else if (g === 0)
-      growthNarrative = "Performance levels remain stable across assessment opportunities.";
-    else
-      growthNarrative = "Recent attempts indicate a slight decline, suggesting instructional recalibration may be beneficial.";
+  if (phase === "recording") {
+    updateData.recordingEndsAt = Date.now() + 60000;
   }
 
-  /* ===== DISTRIBUTION INSIGHT ===== */
-  const highPerformers = dist.level3;
-  const foundational = dist.level0 + dist.level1;
-
-  let distributionInsight = "";
-  if (highPerformers / total >= 0.4) {
-    distributionInsight =
-      "A substantial proportion of students are performing at the highest proficiency level, indicating strong instructional alignment.";
-  } else if (foundational / total >= 0.4) {
-    distributionInsight =
-      "A notable portion of students remain in foundational or emerging performance bands, indicating opportunity for targeted scaffolding.";
-  } else {
-    distributionInsight =
-      "Performance distribution reflects a balanced range of proficiency levels across the class.";
-  }
-
-  /* ===== VARIABILITY ANALYSIS ===== */
-  const variabilityInsight =
-    range >= 2
-      ? "Performance variability suggests differentiated instructional strategies may further optimize outcomes."
-      : "Achievement levels are relatively consistent across the class cohort.";
-
-  return `
-EXECUTIVE SUMMARY
-
-Overall Academic Performance  
-Across ${total} recorded responses, the class demonstrates ${performanceDescriptor}, with an average score of ${analytics.avgScore} out of 3.
-
-Reasoning & Analytical Development  
-Students exhibit ${reasoningDescriptor}, with ${reasoning}% of responses containing identifiable reasoning structures aligned with academic discourse expectations.
-
-Achievement Distribution  
-Level 3 (Advanced): ${dist.level3}  
-Level 2 (Proficient): ${dist.level2}  
-Level 1 (Emerging): ${dist.level1}  
-Level 0 (Foundational): ${dist.level0}
-
-Growth Trends  
-Average score change across repeated attempts: ${growth ?? "N/A"}  
-${growthNarrative}
-
-Instructional & Administrative Insight  
-${distributionInsight}  
-${variabilityInsight}
-
-Overall, current instructional strategies are supporting conceptual understanding development, with continued emphasis on structured reasoning likely to further elevate student mastery.
-`;
+  await updateDoc(classRef, updateData);
 };
 
-  /* ================= CLASS PDF EXPORT ================= */
+  const openQuestion = async () => {
+    await updateDoc(classRef, { questionOpen: true });
+  };
 
-  const downloadClassPDF = () => {
-    if (!analytics) return;
+  const closeQuestion = async () => {
+    await updateDoc(classRef, { questionOpen: false });
+  };
 
-    const doc = new jsPDF();
-    const today = new Date().toLocaleDateString();
 
-    doc.setFontSize(18);
-    doc.text("Think Out Loud - Class Report", 20, 20);
+const nextQuestion = async () => {
+  try {
 
-    doc.setFontSize(12);
-    doc.text(`Class: ${currentClass?.className}`, 20, 35);
-    doc.text(`Generated: ${today}`, 20, 45);
-    doc.text(`Average Score: ${analytics.avgScore}/3`, 20, 55);
-    doc.text(`Reasoning: ${analytics.reasoningPercent}%`, 20, 65);
-    doc.text(`Growth: ${analytics.avgGrowth ?? "N/A"}`, 20, 75);
+    const q = query(
+      collection(db, "questions"),
+      where("category", "==", classData.category),
+      where("lesson", "==", classData.currentLesson)
+    );
 
-    autoTable(doc, {
-      startY: 85,
-      head: [["Level 3", "Level 2", "Level 1", "Level 0"]],
-      body: [[
-        analytics.scoreDistribution.level3,
-        analytics.scoreDistribution.level2,
-        analytics.scoreDistribution.level1,
-        analytics.scoreDistribution.level0
-      ]]
+    const snap = await getDocs(q);
+    const totalQuestions = snap.size;
+
+    const next = (classData?.currentQuestion || 1) + 1;
+
+    if (next > totalQuestions) {
+      alert("No more questions in this lesson");
+      return;
+    }
+
+    await updateDoc(classRef, {
+      currentQuestion: next,
+      questionOpen: false,
+      classPhase: "instruction"
     });
 
-    doc.text("Executive Summary:", 20, doc.lastAutoTable.finalY + 15);
+  } catch (err) {
+    console.error("Next question error:", err);
+  }
+};
 
-    const summary = doc.splitTextToSize(
-      generateClassExecutiveSummary(),
-      170
-    );
-
-    doc.text(summary, 20, doc.lastAutoTable.finalY + 25);
-
-    doc.save(`${currentClass?.className}_Class_Report.pdf`);
+  const lockLesson = async () => {
+    await updateDoc(classRef, { lessonLocked: true });
   };
 
-  /* ================= FILTER ================= */
-
-  const filteredResponses = useMemo(() => {
-    if (!filterStudent) return responses;
-    return responses.filter(r =>
-      r.student.toLowerCase().includes(filterStudent.toLowerCase())
-    );
-  }, [responses, filterStudent]);
-
-  /* ================= RESET / RESTORE ================= */
-
-  const handleReset = async () => {
-    const functions = getFunctions();
-    const resetClassData = httpsCallable(functions, "resetClassData");
-    await resetClassData({ classCode: selectedClassCode });
-    alert("Class reset complete.");
+  const unlockLesson = async () => {
+    await updateDoc(classRef, { lessonLocked: false });
   };
 
-  const handleRestore = async () => {
-    const functions = getFunctions();
-    const restoreClassData = httpsCallable(functions, "restoreClassData");
-    await restoreClassData({ classCode: selectedClassCode });
-    alert("Class restored.");
+  const clearSpotlight = async () => {
+    await updateDoc(classRef, { spotlightResponseId: null });
   };
 
-  /* ================= STUDENT PDF ================= */
+  const getButtonStyle = (isActive, isDisabled) => ({
+    padding: "10px 14px",
+    marginRight: 10,
+    marginBottom: 10,
+    borderRadius: 6,
+    border: "none",
+    fontWeight: "600",
+    cursor: isDisabled ? "not-allowed" : "pointer",
+    backgroundColor: isActive ? "#228be6" : isDisabled ? "#dee2e6" : "#f1f3f5",
+    color: isActive ? "white" : "#333",
+    opacity: isDisabled ? 0.6 : 1
+  });
 
-  const downloadStudentPDF = (response) => {
-    const doc = new jsPDF();
+  /* -------- GUARDS -------- */
 
-    doc.setFontSize(18);
-    doc.text("Think Out Loud - Student Report", 20, 20);
+  if (!classId) return <div>No class selected.</div>;
+  if (!classData) return <div>Loading class...</div>;
 
-    doc.setFontSize(12);
-    doc.text(`Student: ${response.student}`, 20, 35);
-    doc.text(`Class: ${currentClass?.className}`, 20, 45);
-    doc.text(`Score: ${response.score}/3`, 20, 55);
+  /* -------- UI -------- */
 
-    doc.save(`${response.student}_Report.pdf`);
-  };
+  return (
+    <div style={{ padding: 30, maxWidth: 1400, margin: "0 auto" }}>
 
-  /* ================= UI ================= */
+      <h1>{classData.className}</h1>
 
-return (
-  <div style={{ padding: 30 }}>
-    <h2>📊 Teacher Dashboard</h2>
-
-    <div style={{ marginBottom: 15 }}>
-      <button onClick={handleReset} style={styles.red}>🔁 Reset</button>
-      <button onClick={handleRestore} style={styles.green}>🧠 Restore</button>
-      <button onClick={downloadClassPDF} style={styles.blue}>📄 Download Class Report</button>
-    </div>
-
-    <div style={{ marginBottom: 25 }}>
-      <ClassManager />
-    </div>
-
-    {analytics && (
-      <>
-        <div style={styles.summary}>
-          <strong>Average Score:</strong> {analytics.avgScore} |
-          <strong> Reasoning:</strong> {analytics.reasoningPercent}%
-          <div style={styles.execBox}>
-            <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
-              {generateClassExecutiveSummary()}
-            </pre>
+      {/* -------- JOIN CODE -------- */}
+      <div style={{
+        marginBottom: 25,
+        padding: 15,
+        background: "#e7f5ff",
+        borderRadius: 10,
+        display: "flex",
+        justifyContent: "space-between"
+      }}>
+        <div>
+          <div>Join Code</div>
+          <div style={{ fontSize: 28, fontWeight: "bold" }}>
+            {classData.joinCode || "—"}
           </div>
         </div>
 
-        {performanceBands && (
-          <div style={styles.bandContainer}>
-            <h3>📊 Performance Bands</h3>
+        <button onClick={() => {
+          navigator.clipboard.writeText(classData.joinCode || "");
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}>
+          {copied ? "Copied!" : "Copy Code"}
+        </button>
+      </div>
+        
+      {/* -------- LESSON PHASE -------- */}
 
-            {[
-              { label: "Advanced (Level 3)", data: performanceBands.advanced, color: "#2ecc71" },
-              { label: "Proficient (Level 2)", data: performanceBands.proficient, color: "#3498db" },
-              { label: "Emerging (Level 1)", data: performanceBands.emerging, color: "#f39c12" },
-              { label: "Foundational (Level 0)", data: performanceBands.foundational, color: "#e74c3c" }
-            ].map((band, i) => (
-              <div key={i} style={styles.bandRow}>
-                <div style={styles.bandLabel}>
-                  {band.label} — {band.data.count} students ({band.data.percent}%)
-                </div>
-                <div style={styles.bandBarBackground}>
-                  <div
-                    style={{
-                      ...styles.bandBarFill,
-                      width: `${band.data.percent}%`,
-                      backgroundColor: band.color
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <div style={{ marginBottom: 25 }}>
+        <h3>Lesson Phase</h3>
 
-        {growthChartData.length > 1 && (
-          <div style={{ marginBottom: 40 }}>
-            <h3>📈 Class Growth Trend</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={growthChartData}>
-                <XAxis dataKey="attempt" />
-                <YAxis domain={[0, 3]} />
-                <Tooltip />
-                <Line type="monotone" dataKey="average" stroke="#8884d8" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </>
+        <button onClick={() => setPhase("instruction")} style={getButtonStyle(classData.classPhase === "instruction")}>Instruction</button>
+        <button onClick={() => setPhase("recording")} style={getButtonStyle(classData.classPhase === "recording")}>Recording</button>
+        <button onClick={() => setPhase("discussion")} style={getButtonStyle(classData.classPhase === "discussion")}>Discussion</button>
+        <button onClick={() => setPhase("reflection")} style={getButtonStyle(classData.classPhase === "reflection")}>Reflection</button>
+      </div>
+
+{/* -------- QUESTION CONTROLS -------- */}
+
+<div style={{ marginBottom: 25 }}>
+  <h3>Question Controls</h3>
+
+  <button
+    onClick={openQuestion}
+    disabled={classData?.questionOpen}
+    style={getButtonStyle(
+      classData?.questionOpen,
+      classData?.questionOpen
     )}
+  >
+    Open Question
+  </button>
 
-    <input
-      placeholder="Search student..."
-      value={filterStudent}
-      onChange={e => setFilterStudent(e.target.value)}
-      style={styles.search}
-    />
+  <button
+    onClick={closeQuestion}
+    disabled={!classData?.questionOpen}
+    style={getButtonStyle(
+      false,
+      !classData?.questionOpen
+    )}
+  >
+    Close Question
+  </button>
 
-    <table border="1" cellPadding="8" width="100%">
-      <thead>
-        <tr>
-          <th>Student</th>
-          <th>Score</th>
-          <th>Audio</th>
-          <th>PDF</th>
-        </tr>
-      </thead>
-      <tbody>
-        {filteredResponses.map(r => (
-          <tr key={r.id}>
-            <td>{r.student}</td>
-            <td>{r.score}</td>
-            <td><AudioPlayer url={r.audioURL} /></td>
-            <td>
-              <button onClick={() => downloadStudentPDF(r)}>📄</button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
+  <button
+    onClick={nextQuestion}
+    disabled={classData?.questionOpen}
+    style={getButtonStyle(
+      false,
+      classData?.questionOpen
+    )}
+  >
+    Next Question
+  </button>
+</div>
+        
+      {/* -------- PANELS -------- */}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+
+        <div>
+          <SubmissionProgressPanel responses={responses} />
+          <RecordingTickerPanel responses={responses} />
+          <LiveResponseGrid responses={responses} />
+          <QuestionStatusPanel responses={responses} />
+        </div>
+
+        <div>
+          <SuggestedResponsesPanel responses={responses} />
+          <TeacherSpotlightPanel responses={responses} />
+          <LiveTranscriptFeed responses={responses} />
+          <ReasoningHighlightsPanel responses={responses} />
+          <ThinkingPatternsPanel responses={responses} />
+          <CounterargumentPanel responses={responses} />
+          <DominantReasoningThemes analytics={analytics} />
+          <ReasoningGapDetector analytics={analytics} />
+          <TeacherPromptEngine prompts={prompts} />
+          <ReasoningHeatmapPanel responses={responses} />
+          <ReasoningAnalyticsPanel classId={classId} sessionId={sessionId} />
+          <TeacherTimelinePanel responses={responses} />
+          <AnalyticsSummary analytics={analytics} />
+        </div>
+
+      </div>
+
+    </div>
+  );
 }
-
-/* ================= STYLES ================= */
-
-const styles = {
-  red: { background: "#e74c3c", color: "white", padding: "8px 12px", border: "none", borderRadius: 6, marginRight: 10 },
-  green: { background: "#2ecc71", color: "white", padding: "8px 12px", border: "none", borderRadius: 6, marginRight: 10 },
-  blue: { background: "#3498db", color: "white", padding: "8px 12px", border: "none", borderRadius: 6, marginRight: 10 },
-  summary: { padding: 12, background: "#f1f3f5", marginBottom: 20, borderRadius: 6 },
-  search: { padding: 10, marginBottom: 20, width: "100%", maxWidth: 300 },
-  execBox: { marginTop: 10, padding: 10, background: "#fff", borderRadius: 6 }
-};
