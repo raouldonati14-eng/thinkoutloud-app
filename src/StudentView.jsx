@@ -64,14 +64,13 @@ useEffect(() => {
   }
 
   const updateTimer = () => {
-    const diff = Math.max(
-      0,
-      Math.ceil((recordingEndsAt - Date.now()) / 1000)
-    );
+  const diff = Math.max(
+    0,
+    Math.ceil((recordingEndsAt - Date.now()) / 1000)
+  );
 
-    // (optional) you can display this later
-    // console.log("Time left:", diff);
-  };
+  console.log(diff);
+};
 
   updateTimer();
 
