@@ -231,18 +231,6 @@ const nextQuestion = async () => {
   }
 };
 
-  const lockLesson = async () => {
-    await updateDoc(classRef, { lessonLocked: true });
-  };
-
-  const unlockLesson = async () => {
-    await updateDoc(classRef, { lessonLocked: false });
-  };
-
-  const clearSpotlight = async () => {
-    await updateDoc(classRef, { spotlightResponseId: null });
-  };
-
   const getButtonStyle = (isActive, isDisabled) => ({
     padding: "10px 14px",
     marginRight: 10,

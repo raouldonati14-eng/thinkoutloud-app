@@ -16,7 +16,6 @@ export default function StudentView() {
   const [questionOpen, setQuestionOpen] = useState(false);
 
   const [recordingEndsAt, setRecordingEndsAt] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(0);
 
   const [joinCode, setJoinCode] = useState("");
   const [selectedClassId, setSelectedClassId] = useState("");
