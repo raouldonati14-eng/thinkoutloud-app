@@ -2,6 +2,10 @@ import React, { useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 
 import { db } from "../firebase";
+import {
+  formatRecordingTime,
+  useRecordingState
+} from "../utils/useRecordingState";
 
 import ThinkOutLoudRecorder from "../components/ThinkOutLoudRecorder";
 import StudentProgressBar from "../components/StudentProgressBar";
@@ -16,101 +20,58 @@ export default function RecordingScreen({
   student,
   classCode
 }) {
-
-  const [remaining, setRemaining] = useState(null);
-
-  /* ================= LISTEN TO TIMER ================= */
+  const [classData, setClassData] = useState(null);
+  const { recordingState, timeLeft } = useRecordingState(classData || {});
 
   useEffect(() => {
-
     if (!classCode) return;
 
     const classRef = doc(db, "classes", classCode);
 
-    const unsubscribe = onSnapshot(classRef, snap => {
-
-      const data = snap.data();
-
-      if (!data?.questionTimerEnd) {
-        setRemaining(null);
-        return;
-      }
-
-      const end = data.questionTimerEnd.toDate().getTime();
-
-      const interval = setInterval(() => {
-
-        const now = Date.now();
-
-        const diff = Math.max(0, Math.floor((end - now) / 1000));
-
-        setRemaining(diff);
-
-      }, 1000);
-
-      return () => clearInterval(interval);
-
+    const unsubscribe = onSnapshot(classRef, (snap) => {
+      setClassData(snap.exists() ? snap.data() : null);
     });
 
     return () => unsubscribe();
-
   }, [classCode]);
-
-  /* ================= TIMER FORMAT ================= */
-
-  const minutes = remaining !== null ? Math.floor(remaining / 60) : null;
-  const seconds = remaining !== null ? remaining % 60 : null;
-
-  /* ================= UI ================= */
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-
         <h2 style={styles.title}>Think Out Loud</h2>
-
-        {/* PROGRESS BAR */}
 
         <StudentProgressBar
           current={currentIndex + 1}
           total={totalQuestions}
         />
 
-        {/* TIMER */}
-
-        {remaining !== null && (
+        {recordingState !== "waiting" && (
           <div style={styles.timerBox}>
-
             <div style={styles.timerLabel}>
-              Time Remaining
+              {recordingState === "active"
+                ? "Time Remaining"
+                : "Timer Status"}
             </div>
 
             <div style={styles.timer}>
-              ⏱ {minutes}:{seconds.toString().padStart(2, "0")}
+              {recordingState === "active"
+                ? `⏱ ${formatRecordingTime(timeLeft)}`
+                : "Responses remain open"}
             </div>
-
           </div>
         )}
-
-        {/* QUESTION */}
 
         <p style={styles.questionTitle}>
           <strong>{question.title}</strong>
         </p>
 
-        <p style={styles.questionText}>
-          {question.text}
-        </p>
-
-        {/* INSTRUCTIONS */}
+        <p style={styles.questionText}>{question.text}</p>
 
         <p style={styles.instructions}>
           Explain your thinking. Speak freely and as concisely as possible.
           <br />
           Focus on explaining your reasoning clearly.
         </p>
-
-        {/* RECORDER */}
 
         <ThinkOutLoudRecorder
           classCode={classCode}
@@ -120,21 +81,15 @@ export default function RecordingScreen({
           onFinish={onComplete}
         />
 
-        {/* PROGRESS TEXT */}
-
         <p style={styles.progress}>
           Question {currentIndex + 1} of {totalQuestions}
         </p>
-
       </div>
     </div>
   );
 }
 
-/* ================= STYLES ================= */
-
 const styles = {
-
   container: {
     display: "flex",
     justifyContent: "center",
@@ -192,5 +147,4 @@ const styles = {
     marginTop: "20px",
     color: "#666"
   }
-
 };

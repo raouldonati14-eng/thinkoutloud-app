@@ -1,104 +1,47 @@
-import React, { useEffect, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "../../firebase";
+import React from "react";
 
-export default function CounterargumentPanel({ classId, sessionId }) {
+export default function CounterargumentPanel({ responses = [] }) {
+  const increaseGroup = [];
+  const reduceGroup = [];
 
-  const [conflicts, setConflicts] = useState([]);
+  responses.forEach((response) => {
+    const text = (response.transcript || "").toLowerCase();
+    const studentName = response.studentName || response.studentId;
 
-  useEffect(() => {
+    if (text.includes("increase") || text.includes("more")) {
+      increaseGroup.push(studentName);
+    }
 
-    if (!classId || !sessionId) return;
+    if (text.includes("reduce") || text.includes("less")) {
+      reduceGroup.push(studentName);
+    }
+  });
 
-    const responsesRef = collection(
-      db,
-      "classes",
-      classId,
-      "sessions",
-      sessionId,
-      "responses"
-    );
-
-    const unsubscribe = onSnapshot(responsesRef, (snapshot) => {
-
-      const increaseGroup = [];
-      const reduceGroup = [];
-
-      snapshot.docs.forEach(doc => {
-
-        const data = doc.data();
-        const text = (data.transcript || "").toLowerCase();
-
-        if (text.includes("increase") || text.includes("more")) {
-          increaseGroup.push(data.student);
-        }
-
-        if (text.includes("reduce") || text.includes("less")) {
-          reduceGroup.push(data.student);
-        }
-
-      });
-
-      const detected = [];
-
-      if (increaseGroup.length && reduceGroup.length) {
-
-        detected.push({
-          topic: "Policy Impact",
-          groupA: increaseGroup,
-          groupB: reduceGroup
-        });
-
-      }
-
-      setConflicts(detected);
-
-    });
-
-    return () => unsubscribe();
-
-  }, [classId, sessionId]);
+  const conflicts =
+    increaseGroup.length && reduceGroup.length
+      ? [{ topic: "Different Claims", groupA: increaseGroup, groupB: reduceGroup }]
+      : [];
 
   return (
-
     <div style={styles.container}>
-
       <h3>Counterarguments Detected</h3>
 
       {conflicts.length === 0 && (
-        <div style={styles.none}>
-          No counterarguments detected yet.
-        </div>
+        <div style={styles.none}>No counterarguments detected yet.</div>
       )}
 
-      {conflicts.map((c, i) => (
-
-        <div key={i} style={styles.card}>
-
-          <div style={styles.topic}>
-            {c.topic}
-          </div>
-
-          <div style={styles.group}>
-            Group A: {c.groupA.join(", ")}
-          </div>
-
-          <div style={styles.group}>
-            Group B: {c.groupB.join(", ")}
-          </div>
-
+      {conflicts.map((conflict, index) => (
+        <div key={index} style={styles.card}>
+          <div style={styles.topic}>{conflict.topic}</div>
+          <div style={styles.group}>Group A: {conflict.groupA.join(", ")}</div>
+          <div style={styles.group}>Group B: {conflict.groupB.join(", ")}</div>
         </div>
-
       ))}
-
     </div>
-
   );
-
 }
 
 const styles = {
-
   container: {
     background: "#fff",
     padding: 20,
@@ -106,27 +49,22 @@ const styles = {
     boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
     marginBottom: 20
   },
-
   card: {
     marginTop: 10,
     padding: 10,
     background: "#f8f9fa",
     borderRadius: 6
   },
-
   topic: {
     fontWeight: 600,
     marginBottom: 6
   },
-
   group: {
     fontSize: 14,
     color: "#555"
   },
-
   none: {
     fontSize: 14,
     color: "#777"
   }
-
 };

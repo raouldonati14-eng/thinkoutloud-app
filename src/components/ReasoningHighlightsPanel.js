@@ -1,41 +1,35 @@
 import React from "react";
 
 function ReasoningHighlightsPanel({ responses }) {
-
-  const reasoning = responses?.filter(
-    r => r.reasoningDetected
-  );
+  const reasoning = responses?.filter((response) => {
+    const text = (response.transcript || "").toLowerCase();
+    return (
+      text.includes("because") ||
+      text.includes("therefore") ||
+      text.includes("for example") ||
+      text.includes("evidence") ||
+      text.includes("however")
+    );
+  });
 
   if (!reasoning?.length) {
     return null;
   }
-
   return (
-
     <div style={styles.card}>
-
       <strong>Reasoning Highlights</strong>
-
-      {reasoning.slice(0, 5).map((r) => (
-
-        <div key={r.id} style={styles.entry}>
-
+      {reasoning.slice(0, 5).map((response) => (
+        <div key={response.id} style={styles.entry}>
           <div style={styles.student}>
-            {r.student}
+            {response.studentName || response.studentId}
           </div>
-
           <div style={styles.text}>
-            {r.transcript}
+            {response.transcript}
           </div>
-
         </div>
-
       ))}
-
     </div>
-
   );
-
 }
 
 export default React.memo(ReasoningHighlightsPanel);

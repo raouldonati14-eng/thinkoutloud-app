@@ -1,239 +1,235 @@
-
-import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
-import * as logger from "firebase-functions/logger";
+import { transcribeFromGCS } from "./services/speech.js";
 
 admin.initializeApp();
+
 const db = admin.firestore();
 
-/* ======================================================
-   SUBMIT STUDENT RESPONSE
-====================================================== */
+/* ================= FEEDBACK FUNCTION ================= */
+const generateFeedback = (score: number, transcript: string) => {
+  if (!transcript) return "Try explaining your thinking more clearly.";
 
+  if (score === 3) {
+    return "Excellent explanation. You clearly connected ideas and showed strong reasoning.";
+  }
+
+  if (score === 2) {
+    return "Good thinking. Try to make your cause-and-effect reasoning even clearer.";
+  }
+
+  return "Keep trying. Use words like 'because' or 'this leads to' to explain your thinking.";
+};
+
+/* ================= MAIN FUNCTION ================= */
 export const submitStudentResponse = onCall(
   { region: "us-central1" },
   async (request) => {
 
+    console.log("🔥 FUNCTION RUNNING");
+    console.log("📦 DATA RECEIVED:", request.data);
+
+    const data = request.data as any;
+
     const {
       responseId,
       classCode,
+      sessionId,
       questionId,
       student,
       category,
-      transcript,
       durationSeconds,
       audioURL
-    } = request.data;
+    } = data;
 
     /* ================= VALIDATION ================= */
-
-    if (!responseId) {
-      throw new HttpsError("invalid-argument", "Missing responseId.");
-    }
-
-    if (!classCode || !questionId || !student || !durationSeconds || !audioURL) {
+    if (
+      !responseId ||
+      !classCode ||
+      !sessionId ||
+      !questionId ||
+      !student ||
+      durationSeconds === undefined ||
+      !audioURL
+    ) {
       throw new HttpsError("invalid-argument", "Missing required fields.");
     }
 
-    const classId = classCode;
-
     /* ================= LOAD CLASS ================= */
-
-    const classSnap = await db.doc(`classes/${classId}`).get();
+    const classSnap = await db.doc(`classes/${classCode}`).get();
 
     if (!classSnap.exists) {
       throw new HttpsError("not-found", "Class not found.");
     }
 
-    const classData = classSnap.data() || {};
-
-    const teacherId = classData.teacherId;
-    const schoolId = classData.schoolId || null;
-    const districtId = classData.districtId || null;
+    const teacherId = classSnap.data()?.teacherId;
 
     if (!teacherId) {
       throw new HttpsError("internal", "Class missing teacher.");
     }
 
+    /* ================= TRANSCRIPTION ================= */
+    let transcriptText = "";
+
+    try {
+      console.log("🧠 Starting transcription...");
+
+      const bucket = admin.storage().bucket();
+      const bucketName = bucket.name;
+
+      console.log("🪵 AUDIO PATH:", audioURL);
+
+      const file = bucket.file(audioURL);
+      const [exists] = await file.exists();
+
+      console.log("📁 FILE EXISTS:", exists);
+
+      if (!exists) {
+        throw new Error("Audio file does not exist in storage");
+      }
+
+      const gcsUri = `gs://${bucketName}/${audioURL}`;
+      console.log("🌐 GCS URI:", gcsUri);
+
+      transcriptText = await transcribeFromGCS(gcsUri);
+
+      console.log("📝 TRANSCRIPT:", transcriptText);
+
+      if (!transcriptText) {
+        throw new Error("Empty transcript returned");
+      }
+
+    } catch (err: any) {
+      console.error("❌ TRANSCRIPTION ERROR FULL:", err);
+      throw new HttpsError("internal", err.message || "Transcription failed");
+    }
+
     /* ================= SCORING ================= */
 
-    const safeTranscript = (transcript || "").toLowerCase();
+    const safeTranscript = transcriptText.toLowerCase();
 
-    const reasoningWords =
-      safeTranscript.match(
-        /because|therefore|since|evidence|so that|for example|this shows/g
-      ) || [];
+    const durationMet = durationSeconds >= 60;
 
-    let score = 0;
+    // ✅ FIXED sentence splitting
+    const sentences = safeTranscript
+      .replace(/([.!?])([A-Z])/g, "$1 $2")
+      .split(/[.!?]+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
 
-    if (durationSeconds >= 60) score += 1;
-    if (reasoningWords.length > 0) score += 2;
+    // ✅ UPGRADED reasoning detection
+    const causalPatterns = [
+      /because/i,
+      /since/i,
+      /\bso\b/i,
+      /so that/i,
+      /so it/i,
+      /therefore/i,
+      /thus/i,
+      /as a result/i,
+      /this means/i,
+      /this shows/i,
+      /that'?s why/i,
+      /which means/i,
+      /which leads to/i,
+      /leads to/i,
+      /can lead to/i,
+      /results in/i,
+      /results?/i,
+      /due to/i,
+      /causes?/i,
+      /creates?/i,
+      /makes?/i,
+      /allows?/i,
+      /driven by/i,
+      /adapt(s|ation)?/i,
+      /if .* then/i
+    ];
 
-    const reasoningDetected = reasoningWords.length > 0;
+    let causalChains = 0;
 
-    /* ================= UPDATE RESPONSE ================= */
+    sentences.forEach((s) => {
+      causalPatterns.forEach(pattern => {
+        if (pattern.test(s)) {
+          causalChains++;
+        }
+      });
+    });
 
-    const responseRef = db.collection("responses").doc(responseId);
+    // ✅ prevent runaway counts
+    causalChains = Math.min(causalChains, 5);
 
-    await responseRef.update({
-      classId,
+    const longSentences = sentences.filter(
+      (s) => s.split(" ").length > 12
+    );
+
+    let conceptLinks = 0;
+
+    for (let i = 0; i < sentences.length - 1; i++) {
+      if (
+        sentences[i].length > 20 &&
+        sentences[i + 1].length > 20
+      ) {
+        conceptLinks++;
+      }
+    }
+
+    // ✅ DEBUG LOGS (critical)
+    console.log("🧠 SENTENCE COUNT:", sentences.length);
+    console.log("🧠 CAUSAL CHAINS:", causalChains);
+    console.log("🧠 LONG SENTENCES:", longSentences.length);
+    console.log("🧠 CONCEPT LINKS:", conceptLinks);
+
+    let score = 1;
+
+    if (
+      durationMet &&
+      causalChains >= 2 &&
+      longSentences.length >= 2 &&
+      conceptLinks >= 1
+    ) {
+      score = 3;
+    } else if (
+      durationMet &&
+      (causalChains >= 1 || longSentences.length >= 2)
+    ) {
+      score = 2;
+    }
+
+    const reasoningDetected = causalChains > 0;
+
+    console.log("🧠 FINAL SCORE:", score);
+
+    /* ================= SAVE ================= */
+    await db.doc(
+      `classes/${classCode}/sessions/${sessionId}/responses/${responseId}`
+    ).set({
+      classId: classCode,
       teacherId,
-      schoolId,
-      districtId,
       questionId,
       student,
       category: category || "General",
-      transcript: transcript || "",
+      transcript: transcriptText,
       durationSeconds,
       audioURL,
       score,
       reasoningDetected,
       status: "graded",
-      completed: true,
-      deleted: false,
       timestamp: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    /* ================= UPDATE CLASS ANALYTICS ================= */
-
-    const analyticsRef = db.doc(`classAnalytics/${classId}`);
-
-    await db.runTransaction(async (transaction) => {
-
-      const analyticsSnap = await transaction.get(analyticsRef);
-
-      if (!analyticsSnap.exists) {
-
-        transaction.set(analyticsRef, {
-          totalResponses: 1,
-          totalScore: score,
-          reasoningResponses: reasoningDetected ? 1 : 0,
-          avgScore: score,
-          reasoningRate: reasoningDetected ? 1 : 0,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-      } else {
-
-        const data = analyticsSnap.data() || {};
-
-        const totalResponses = (data.totalResponses || 0) + 1;
-        const totalScore = (data.totalScore || 0) + score;
-        const reasoningResponses =
-          (data.reasoningResponses || 0) + (reasoningDetected ? 1 : 0);
-
-        transaction.update(analyticsRef, {
-          totalResponses,
-          totalScore,
-          reasoningResponses,
-          avgScore: totalScore / totalResponses,
-          reasoningRate: reasoningResponses / totalResponses,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-      }
-
-    });
-
-    /* ================= LOGGING ================= */
-
-    logger.info("Student response graded", {
-      classId,
-      student,
-      questionId,
-      score,
-      reasoningDetected
-    });
-
-    /* ================= RETURN RESULT ================= */
-
+    /* ================= RETURN ================= */
     return {
-      success: true,
-      responseId,
       score,
-      reasoningDetected
-    };
-
-  }
-);
-
-/* ======================================================
-   DAILY FIRESTORE BACKUP
-====================================================== */
-
-export const dailyFirestoreBackup = onSchedule(
-  {
-    region: "us-central1",
-    schedule: "0 2 * * *",
-    timeZone: "America/New_York",
-  },
-  async () => {
-
-    const snapshot = await db.collection("responses").get();
-    const date = new Date().toISOString().split("T")[0];
-    const backupRef = db.collection("backups").doc(date);
-
-    let batch = db.batch();
-    let count = 0;
-
-    for (const doc of snapshot.docs) {
-
-      batch.set(
-        backupRef.collection("responses").doc(doc.id),
-        doc.data()
-      );
-
-      count++;
-
-      if (count === 400) {
-        await batch.commit();
-        batch = db.batch();
-        count = 0;
+      reasoningDetected,
+      transcript: transcriptText,
+      aiFeedback: generateFeedback(score, transcriptText),
+      feedback: {
+        durationMet,
+        reasoningCount: causalChains,
+        explanationDepth: longSentences.length,
+        conceptConnections: conceptLinks
       }
-
-    }
-
-    if (count > 0) await batch.commit();
-
-    logger.info(`Backup complete for ${date}`);
-
-  }
-);
-
-/* ======================================================
-   AUDIO VALIDATION
-====================================================== */
-
-export const validateAudioUpload = onObjectFinalized(
-  {
-    region: "us-central1",
-    bucket: "think-out-loud-40d3a.firebasestorage.app",
-  },
-  async (event) => {
-
-    const file = event.data;
-
-    if (!file.name) return;
-    if (!file.name.startsWith("audio/")) return;
-
-    const MAX_SIZE_BYTES = 10 * 1024 * 1024;
-
-    const bucket = admin.storage().bucket();
-    const fileRef = bucket.file(file.name);
-
-    if (file.size && Number(file.size) > MAX_SIZE_BYTES) {
-      await fileRef.delete();
-      return;
-    }
-
-    if (!file.contentType?.startsWith("audio/")) {
-      await fileRef.delete();
-      return;
-    }
-
-    logger.info("Audio validated:", file.name);
-
+    };
   }
 );

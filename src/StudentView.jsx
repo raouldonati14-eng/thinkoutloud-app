@@ -1,272 +1,424 @@
-// ✅ StudentView.jsx (FINAL FIXED)
-
-import React, { useEffect, useState } from "react";
-import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import React, { useEffect, useState, useCallback } from "react";
+import { doc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import EssentialQuestionScreen from "./screens/EssentialQuestionScreen";
+import { useRecordingState } from "./utils/useRecordingState";
+import { SUPPORTED_LANGUAGES, translateMany } from "./utils/translate";
 
 export default function StudentView() {
-
-  const [locked, setLocked] = useState(false);
-  const [classLoaded, setClassLoaded] = useState(false);
-
   const [classData, setClassData] = useState(null);
-
-  const [classPhase, setClassPhase] = useState("instruction");
-  const [questionOpen, setQuestionOpen] = useState(false);
-
-  const [recordingEndsAt, setRecordingEndsAt] = useState(null);
-
+  const [classLoaded, setClassLoaded] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [selectedClassId, setSelectedClassId] = useState("");
-
   const [lastName, setLastName] = useState("");
   const [firstName, setFirstName] = useState("");
-
   const [student, setStudent] = useState(null);
+  const [studentStarted, setStudentStarted] = useState(false);
+  const { recordingState, timeLeft } = useRecordingState(classData || {});
+  const [language, setLanguage] = useState("en");
+  const [makeupData, setMakeupData] = useState(null);
+  const [makeupStarted, setMakeupStarted] = useState(false);
 
-  /* ---------------- LISTEN FOR CLASS ---------------- */
+  // 🌐 TRANSLATED UI STRINGS
+  const [ui, setUi] = useState({
+    joinClass: "Join Class",
+    joinCode: "Join Code",
+    lastName: "Last Name",
+    firstName: "First Name",
+    start: "Start",
+    instructions: "Instructions",
+    waitingForTeacher: "Waiting for teacher...",
+    startResponse: "Start Response",
+    timeUp: "Time is up — you can still respond",
+    takeYourTime: "Take your time",
+    makeupTitle: "You have a make-up assignment",
+    makeupCategory: "Category",
+    startMakeup: "Start Make-Up",
+    presentationMode: "Presentation Mode"
+  });
 
+  const presentationMode = classData?.presentationMode || false;
+  const slideIndex = classData?.slideIndex || 0;
+  const seconds = Math.ceil(timeLeft / 1000);
+
+  // 🌐 RE-TRANSLATE UI WHEN LANGUAGE CHANGES
+  useEffect(() => {
+    if (language === "en") {
+      setUi({
+        joinClass: "Join Class",
+        joinCode: "Join Code",
+        lastName: "Last Name",
+        firstName: "First Name",
+        start: "Start",
+        instructions: "📘 Instructions",
+        waitingForTeacher: "⏸ Waiting for teacher...",
+        startResponse: "▶️ Start Response",
+        timeUp: "⏱ Time is up — you can still respond",
+        takeYourTime: "⏱ Take your time",
+        makeupTitle: "📝 You have a make-up assignment",
+        makeupCategory: "Category",
+        startMakeup: "▶️ Start Make-Up",
+        presentationMode: "🎬 Presentation Mode"
+      });
+      return;
+    }
+
+    const keys = [
+      "Join Class", "Join Code", "Last Name", "First Name", "Start",
+      "📘 Instructions", "⏸ Waiting for teacher...", "▶️ Start Response",
+      "⏱ Time is up — you can still respond", "⏱ Take your time",
+      "📝 You have a make-up assignment", "Category",
+      "▶️ Start Make-Up", "🎬 Presentation Mode"
+    ];
+
+    translateMany(keys, language, "student").then(translated => {
+      setUi({
+        joinClass: translated[0],
+        joinCode: translated[1],
+        lastName: translated[2],
+        firstName: translated[3],
+        start: translated[4],
+        instructions: translated[5],
+        waitingForTeacher: translated[6],
+        startResponse: translated[7],
+        timeUp: translated[8],
+        takeYourTime: translated[9],
+        makeupTitle: translated[10],
+        makeupCategory: translated[11],
+        startMakeup: translated[12],
+        presentationMode: translated[13]
+      });
+    });
+  }, [language]);
+
+  // 🔥 CLASS LISTENER
   useEffect(() => {
     if (!selectedClassId) return;
-
     const classRef = doc(db, "classes", selectedClassId);
-
     const unsubscribe = onSnapshot(classRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-
-        console.log("CLASS DATA:", data);
-
-        setClassData(data);
-
-        setLocked(data.lessonLocked ?? false);
-        setClassPhase(data.classPhase ?? "instruction");
-        setQuestionOpen(data.questionOpen ?? false);
-
-        // ✅ FIX: handle Firestore timestamp
-        setRecordingEndsAt(
-          data.recordingEndsAt?.toMillis?.() ?? null
-        );
-
-        setClassLoaded(true);
-      }
+      if (!snap.exists()) return;
+      setClassData(snap.data());
+      setClassLoaded(true);
     });
-
     return () => unsubscribe();
   }, [selectedClassId]);
 
- /* ---------------- TIMER ---------------- */
+  // 🔥 MAKE-UP LISTENER
+  useEffect(() => {
+    if (!selectedClassId || !student) return;
+    const makeupRef = doc(db, "classes", selectedClassId, "makeup", "assignment");
+    const unsubscribe = onSnapshot(makeupRef, (snap) => {
+      if (!snap.exists()) { setMakeupData(null); return; }
+      const data = snap.data();
+      if (data.open && data.assignedTo?.includes(student)) {
+        setMakeupData(data);
+      } else {
+        setMakeupData(null);
+      }
+    });
+    return () => unsubscribe();
+  }, [selectedClassId, student]);
 
-useEffect(() => {
-  if (!recordingEndsAt || classPhase !== "recording") {
-    return;
-  }
+  // 🔥 ROSTER SAVE
+  useEffect(() => {
+    if (!selectedClassId || !student) return;
+    const rosterRef = doc(
+      db, "classes", selectedClassId, "roster",
+      student.replace(/\s+/g, "_")
+    );
+    setDoc(rosterRef, { name: student, joinedAt: Date.now() }, { merge: true });
+  }, [selectedClassId, student]);
 
-  const updateTimer = () => {
-  const diff = Math.max(
-    0,
-    Math.ceil((recordingEndsAt - Date.now()) / 1000)
-  );
-
-  console.log(diff);
-};
-
-  updateTimer();
-
-  const interval = setInterval(updateTimer, 1000);
-  return () => clearInterval(interval);
-
-}, [recordingEndsAt, classPhase]);
-
-const capitalize = (str) =>
-  str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-  /* ---------------- START SESSION ---------------- */
+  // 🔥 JOIN
+  const capitalize = (str) =>
+    str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 
   const startSession = async () => {
     const code = joinCode.trim().toUpperCase();
-
     if (!code || !lastName || !firstName) {
       alert("Please enter all fields.");
       return;
     }
+    const joinRef = doc(db, "joinCodes", code);
+    const joinSnap = await getDoc(joinRef);
+    if (!joinSnap.exists()) { alert("Invalid join code"); return; }
 
-    try {
-      const joinRef = doc(db, "joinCodes", code);
-      const joinSnap = await getDoc(joinRef);
+    const classId = joinSnap.data().classId;
+    const formattedName = `${capitalize(lastName)}, ${capitalize(firstName)}`;
 
-      console.log("JOIN SNAP:", joinSnap.exists(), joinSnap.data());
+    setStudentStarted(false);
+    setClassData(null);
+    setClassLoaded(false);
+    setSelectedClassId(classId);
+    setStudent(formattedName);
+  };
 
-      if (!joinSnap.exists()) {
-        alert("Invalid join code");
-        return;
+  // 🌐 TRANSLATE CONTENT (question text, prompts, instructions)
+  const [translatedContent, setTranslatedContent] = useState({});
+
+  useEffect(() => {
+    if (!classData || language === "en") {
+      setTranslatedContent({});
+      return;
+    }
+
+    const toTranslate = [
+      classData.instructionText,
+      classData.essentialQuestion,
+      ...(classData.discussionPrompts || []),
+      ...(classData.reflectionPrompts || [])
+    ].filter(Boolean);
+
+    translateMany(toTranslate, language, "student").then(results => {
+      let i = 0;
+      const map = {};
+      if (classData.instructionText) map.instructionText = results[i++];
+      if (classData.essentialQuestion) map.essentialQuestion = results[i++];
+      if (classData.discussionPrompts) {
+        map.discussionPrompts = classData.discussionPrompts.map(() => results[i++]);
       }
-
-      const data = joinSnap.data();
-
-      console.log("JOIN DATA:", data);
-
-      const classId = data.classId;
-
-      if (!classId) {
-        console.error("Missing classId in joinCodes");
-        alert("Invalid class mapping");
-        return;
+      if (classData.reflectionPrompts) {
+        map.reflectionPrompts = classData.reflectionPrompts.map(() => results[i++]);
       }
+      setTranslatedContent(map);
+    });
+  }, [classData, language]);
 
-      console.log("CLASS ID FOUND:", classId);
+  const t = (key) => translatedContent[key] || classData?.[key] || "";
+  const tArray = (key) => translatedContent[key] || classData?.[key] || [];
 
-      const formattedName =
-        `${capitalize(lastName.trim())}, ${capitalize(firstName.trim())}`;
+  /* ---------------- PHASE RENDER ---------------- */
+  const renderPhase = () => {
+    switch (classData?.classPhase) {
 
-      setSelectedClassId(classId);
-      setStudent(formattedName);
+      case "instruction":
+        return (
+          <div style={{ textAlign: "center" }}>
+            <h2>{ui.instructions}</h2>
+            <p>{t("instructionText")}</p>
+          </div>
+        );
 
-    } catch (err) {
-      console.error("Join FULL ERROR:", err);
-      alert("Unable to join class");
+      case "recording":
+        return (
+          <div style={{ textAlign: "center" }}>
+            {recordingState === "waiting" && (
+              <div>{ui.waitingForTeacher}</div>
+            )}
+
+            {recordingState !== "waiting" && !studentStarted && (
+              <>
+                <div>
+                  {recordingState === "active"
+                    ? `🎤 ${seconds}s`
+                    : ui.timeUp}
+                </div>
+                <button onClick={() => setStudentStarted(true)}>
+                  {ui.startResponse}
+                </button>
+              </>
+            )}
+
+            {studentStarted && (
+              <>
+                <div>
+                  {recordingState === "active"
+                    ? `⏱ ${seconds}s`
+                    : ui.takeYourTime}
+                </div>
+                <EssentialQuestionScreen
+                  classCode={joinCode}
+                  classId={selectedClassId}
+                  student={student}
+                  classData={classData}
+                  language={language}
+                  translatedQuestion={t("essentialQuestion")}
+                />
+              </>
+            )}
+          </div>
+        );
+
+      case "discussion":
+        const discussion = tArray("discussionPrompts");
+        return (
+          <div style={{ textAlign: "center" }}>
+            <div>{slideIndex + 1} / {discussion.length}</div>
+            <p>{discussion[slideIndex]}</p>
+          </div>
+        );
+
+      case "reflection":
+        const reflection = tArray("reflectionPrompts");
+        return (
+          <div style={{ textAlign: "center" }}>
+            <div>{slideIndex + 1} / {reflection.length}</div>
+            <p>{reflection[slideIndex]}</p>
+          </div>
+        );
+
+      default:
+        return <div />;
     }
   };
 
-  /* ---------------- ENTRY SCREEN ---------------- */
-
+  /* ---------------- ENTRY ---------------- */
   if (!student) {
     return (
-      <div style={styles.centerScreen}>
-        <div style={styles.card}>
-          <h2>Think Out Loud</h2>
+      <div style={{
+        minHeight: "100vh", display: "flex", justifyContent: "center",
+        alignItems: "center", background: "#f1f3f5", fontFamily: "sans-serif"
+      }}>
+        <div style={{
+          width: 320, background: "white", padding: 30, borderRadius: 12,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.1)", textAlign: "center"
+        }}>
+          {/* LANGUAGE SELECTOR ON JOIN SCREEN */}
+          <div style={{ marginBottom: 16, textAlign: "right" }}>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #ddd" }}
+            >
+              {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
+                <option key={code} value={code}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          <h2 style={{ marginBottom: 20 }}>{ui.joinClass}</h2>
 
           <input
-            placeholder="Join Code"
+            placeholder={ui.joinCode}
             value={joinCode}
-            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-            style={styles.input}
+            onChange={(e) => setJoinCode(e.target.value)}
+            style={{ width: "100%", marginBottom: 10, padding: 10, boxSizing: "border-box" }}
           />
-
           <input
-            placeholder="Last Name"
+            placeholder={ui.lastName}
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
-            style={styles.input}
+            style={{ width: "100%", marginBottom: 10, padding: 10, boxSizing: "border-box" }}
           />
-
           <input
-            placeholder="First Name"
+            placeholder={ui.firstName}
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
-            style={styles.input}
+            style={{ width: "100%", marginBottom: 20, padding: 10, boxSizing: "border-box" }}
           />
 
-          <button onClick={startSession} style={styles.primaryButton}>
-            Start
+          <button
+            onClick={startSession}
+            style={{
+              width: "100%", padding: 12, background: "#228be6",
+              color: "white", border: "none", borderRadius: 6,
+              fontWeight: "bold", fontSize: 16, cursor: "pointer"
+            }}
+          >
+            {ui.start}
           </button>
         </div>
       </div>
     );
   }
 
-  if (!classLoaded) {
-    return (
-      <div style={styles.centerScreen}>
-        <div style={styles.card}>Loading lesson...</div>
-      </div>
-    );
-  }
+  if (!classLoaded) return <div />;
 
-  if (locked) {
-    return (
-      <div style={styles.centerScreen}>
-        <div style={styles.card}>
-          <h2>🔒 Lesson Locked</h2>
-        </div>
-      </div>
-    );
-  }
-
-  /* ---------------- MAIN VIEW ---------------- */
-
+  /* ---------------- MAIN ---------------- */
   return (
-    <div style={styles.page}>
-      <div style={styles.topBar}>
-        <strong>{student}</strong>
+    <div style={{
+      minHeight: "100vh", display: "flex", justifyContent: "center",
+      alignItems: "center", background: "#f1f3f5", fontFamily: "sans-serif"
+    }}>
+      <div style={{
+        width: "100%",
+        maxWidth: presentationMode ? "100%" : 600,
+        height: presentationMode ? "100vh" : "auto",
+        background: "white",
+        padding: presentationMode ? 60 : 30,
+        borderRadius: presentationMode ? 0 : 12,
+        boxShadow: presentationMode ? "none" : "0 10px 30px rgba(0,0,0,0.1)",
+        textAlign: "center",
+        fontSize: presentationMode ? 28 : 18,
+        position: "relative"
+      }}>
+        {presentationMode && (
+          <div style={{
+            position: "absolute", top: 20, left: 20,
+            background: "#2f9e44", color: "white",
+            padding: "6px 12px", borderRadius: 6,
+            fontWeight: "bold", fontSize: 14
+          }}>
+            {ui.presentationMode}
+          </div>
+        )}
+
+        {/* LANGUAGE SELECTOR */}
+        <div style={{ marginBottom: 10, textAlign: "right" }}>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #ddd" }}
+          >
+            {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
+              <option key={code} value={code}>{name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* MAKE-UP CARD */}
+        {makeupData && !makeupStarted && (
+          <div style={{
+            marginBottom: 20, padding: 16,
+            background: "#fff9db", border: "1px solid #ffd43b",
+            borderRadius: 10, textAlign: "left"
+          }}>
+            <div style={{ fontWeight: "bold", marginBottom: 6 }}>
+              {ui.makeupTitle}
+            </div>
+            <div style={{ fontSize: 14, color: "#555", marginBottom: 4 }}>
+              <strong>{ui.makeupCategory}:</strong> {makeupData.category}
+            </div>
+            <div style={{ fontSize: 15, marginBottom: 12 }}>
+              {language === "en"
+                ? makeupData.questionText
+                : translatedContent[makeupData.questionText] || makeupData.questionText}
+            </div>
+            <button
+              onClick={() => setMakeupStarted(true)}
+              style={{
+                padding: "10px 16px", borderRadius: 6, border: "none",
+                background: "#228be6", color: "white",
+                fontWeight: "bold", cursor: "pointer"
+              }}
+            >
+              {ui.startMakeup}
+            </button>
+          </div>
+        )}
+
+        {/* MAKE-UP RESPONSE */}
+        {makeupData && makeupStarted && (
+          <EssentialQuestionScreen
+            classCode={joinCode}
+            classId={selectedClassId}
+            student={student}
+            language={language}
+            translatedQuestion={t("essentialQuestion")}
+            classData={{
+              ...classData,
+              essentialQuestion: makeupData.questionText,
+              category: makeupData.category,
+              discussionPrompts: makeupData.discussionPrompts,
+              reflectionPrompts: makeupData.reflectionPrompts,
+              questionOpen: true
+            }}
+          />
+        )}
+
+        {/* NORMAL PHASE */}
+        {!makeupStarted && renderPhase()}
       </div>
-
-      {classPhase === "instruction" && (
-        <div style={styles.card}>
-          <h2>📘 Instruction</h2>
-        </div>
-      )}
-
-      {classPhase === "recording" && questionOpen && (
-        <EssentialQuestionScreen
-          student={student}
-          classCode={selectedClassId}
-          classData={classData}
-        />
-      )}
-
-      {classPhase === "recording" && !questionOpen && (
-        <div style={styles.card}>
-          <h2>⏸ Waiting</h2>
-        </div>
-      )}
-
-      {classPhase === "discussion" && (
-        <div style={styles.card}>
-          <h2>💬 Discussion</h2>
-        </div>
-      )}
-
-      {classPhase === "reflection" && (
-        <div style={styles.card}>
-          <h2>🧠 Reflection</h2>
-        </div>
-      )}
     </div>
   );
 }
-
-/* ---------------- STYLES ---------------- */
-
-const styles = {
-  centerScreen: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    height: "100vh",
-    background: "#f8f9fa"
-  },
-  card: {
-    background: "white",
-    padding: 30,
-    borderRadius: 10,
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-    textAlign: "center",
-    width: 300
-  },
-  input: {
-    width: "100%",
-    padding: 10,
-    margin: "10px 0",
-    borderRadius: 6,
-    border: "1px solid #ccc"
-  },
-  primaryButton: {
-    width: "100%",
-    padding: 10,
-    background: "#4dabf7",
-    color: "white",
-    border: "none",
-    borderRadius: 6,
-    cursor: "pointer",
-    marginTop: 10
-  },
-  page: {
-    padding: 20
-  },
-  topBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    marginBottom: 20
-  }
-};

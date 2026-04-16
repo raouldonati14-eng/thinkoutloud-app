@@ -6,7 +6,7 @@ import {
   onSnapshot
 } from "firebase/firestore";
 
-import { db } from "../../firebase";
+import { db } from  "../../firebase";
 
 export default function ClassProgressBar({ classId }) {
 

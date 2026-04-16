@@ -1,7 +1,12 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  getAuth,
+  setPersistence
+} from "firebase/auth";
 import { getStorage } from "firebase/storage"; // NEW
+import { getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCHwFLi_59ETAKZYujmWpYFr6SqluXaSgE",
@@ -14,6 +19,23 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
+if (process.env.NODE_ENV === "development") {
+  console.log("FIREBASE CONFIG", {
+    apiKey: firebaseConfig.apiKey,
+    authDomain: firebaseConfig.authDomain,
+    projectId: firebaseConfig.projectId
+  });
+}
+
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app); // NEW
+export const functions = getFunctions(app);
+
+export const authPersistenceReady = setPersistence(
+  auth,
+  browserLocalPersistence
+).catch((error) => {
+  console.error("AUTH PERSISTENCE ERROR", error);
+});
+

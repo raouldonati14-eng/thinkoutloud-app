@@ -1,49 +1,37 @@
 import React, { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "./firebase";
-import { useNavigate } from "react-router-dom";
 
 export default function TeacherLogin() {
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const navigate = useNavigate(); // ✅ NEW
+  const [loginError, setLoginError] = useState("");
 
   const handleLogin = async () => {
-
     console.log("LOGIN CLICKED");
 
-    if (!email || !password) {
-      alert("Please enter email and password");
-      return;
-    }
-
     try {
-      setLoading(true);
+      setLoginError("");
+      const result = await signInWithEmailAndPassword(auth, email, password);
 
-      await signInWithEmailAndPassword(auth, email, password);
-
-      console.log("LOGIN SUCCESS");
-
-      // ✅ THIS FIXES YOUR PROBLEM
-      navigate("/teacher");
-
-    } catch (error) {
-
-      console.error("LOGIN ERROR:", error);
-      alert(error.message);
-
-    } finally {
-      setLoading(false);
+      console.log("LOGIN SUCCESS", result.user);
+    } catch (err) {
+      console.error("LOGIN ERROR", err.code, err.message);
+      const message = "LOGIN ERROR: " + err.code + " - " + err.message;
+      setLoginError(message);
+      alert(message);
     }
   };
 
   return (
     <div style={{ padding: 40 }}>
+      <h2>Not logged in</h2>
 
-      <h2>Teacher Login</h2>
+      {loginError && (
+        <div style={{ marginBottom: 12, color: "#c92a2a" }}>
+          {loginError}
+        </div>
+      )}
 
       <input
         type="email"
@@ -61,10 +49,7 @@ export default function TeacherLogin() {
         style={{ display: "block", marginBottom: 10 }}
       />
 
-      <button onClick={handleLogin} disabled={loading}>
-        {loading ? "Logging in..." : "Login"}
-      </button>
-
+      <button onClick={handleLogin}>Force Login</button>
     </div>
   );
 }

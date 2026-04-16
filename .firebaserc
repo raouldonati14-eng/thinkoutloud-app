@@ -2,6 +2,14 @@
   "projects": {
     "default": "think-out-loud-40d3a"
   },
-  "targets": {},
+  "targets": {
+    "think-out-loud-40d3a": {
+      "storage": {
+        "default": [
+          "think-out-loud-40d3a.firebasestorage.app"
+        ]
+      }
+    }
+  },
   "etags": {}
 }

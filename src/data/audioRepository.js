@@ -1,4 +1,4 @@
-import { ref, uploadBytes } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase";
 
 export const audioRepository = {
@@ -13,7 +13,7 @@ export const audioRepository = {
       contentType: "audio/webm"
     });
 
-    return path;
+    return await getDownloadURL(storageRef);
   }
 
 };

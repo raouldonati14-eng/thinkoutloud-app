@@ -1,8 +1,14 @@
 import React from "react";
-import { doc, updateDoc, setDoc, getDoc } from "firebase/firestore";
+import {
+  doc,
+  updateDoc,
+  setDoc,
+  getDoc,
+  serverTimestamp
+} from "firebase/firestore";
 import { db } from "../../firebase";
 
-export default function ClassroomControlPanel({ classId, classData }) {
+export default function ClassroomControlPanel({ classId, classData, setPhase }) {
 
   const MAX_LESSON = 3;
 
@@ -130,14 +136,28 @@ export default function ClassroomControlPanel({ classId, classData }) {
 
           <button
             style={styles.button}
-            onClick={() => updateClass({ classPhase: "instruction" })}
+            onClick={() => setPhase("instruction")}
           >
             Instruction
           </button>
 
           <button
             style={styles.button}
-            onClick={() => updateClass({ classPhase: "recording" })}
+            onClick={() => {
+              if (typeof setPhase === "function") {
+                setPhase("recording");
+                return;
+              }
+
+              updateClass({
+                classPhase: "recording",
+                recording: {
+                  startTime: serverTimestamp(),
+                  clientStartTime: Date.now(),
+                  durationMs: 60000
+                }
+              });
+            }}
           >
             Recording
           </button>

@@ -3,34 +3,33 @@ export default function ClassSelector({
   selectedClassId,
   onSelect
 }) {
+  // Filter out any "ghost" classes that don't have a name or ID
+  const validClasses = classes.filter(c => c.className);
 
-  if (classes.length === 0) {
-    return <div>No classes found</div>;
+  if (validClasses.length === 0) {
+    return <div style={{ color: 'gray', italic: 'true' }}>No named classes available.</div>;
   }
 
   return (
     <div style={{ marginBottom: 25 }}>
-
       <h2>📚 Select Class</h2>
-
       <select
         value={selectedClassId || ""}
         onChange={(e) => onSelect(e.target.value)}
         style={{
           padding: "10px",
           fontSize: "16px",
-          minWidth: "300px"
+          minWidth: "300px",
+          borderRadius: "8px" // A little styling for production
         }}
       >
-
-        {classes.map((c) => (
+        <option value="" disabled>-- Choose a Class --</option>
+        {validClasses.map((c) => (
           <option key={c.id} value={c.id}>
-            {c.className || "Untitled Class"}
+            {c.name || c.className}
           </option>
         ))}
-
       </select>
-
     </div>
   );
 }

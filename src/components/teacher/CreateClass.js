@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { db, auth } from "../../firebase";
-import { collection, addDoc, setDoc, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, doc, getDoc } from "firebase/firestore";
 
 export default function CreateClass() {
 
@@ -31,88 +31,86 @@ export default function CreateClass() {
     return code;
   };
 
-  const createClass = async () => {
+const createClass = async () => {
 
-    if (!auth.currentUser) {
-      alert("You must be logged in");
-      return;
-    }
+  if (!auth.currentUser) {
+    alert("You must be logged in");
+    return;
+  }
 
-    if (!className.trim()) {
-      alert("Enter a class name");
-      return;
-    }
+  if (!className.trim()) {
+    alert("Enter a class name");
+    return;
+  }
 
-    try {
+  try {
 
-      setLoading(true);
+    setLoading(true);
 
-      // 🔥 ensure unique join code
-      const code = await generateUniqueCode();
+    // 🔥 ensure unique join code
+    const code = await generateUniqueCode();
 
-      const docRef = await addDoc(collection(db, "classes"), {
-        className: className,
-        teacherId: auth.currentUser.uid,
-        joinCode: code,
-        createdAt: Date.now(),
+    await addDoc(collection(db, "classes"), {
+className: className,
+teacherId: auth.currentUser.uid,
 
-        // ✅ CORE CLASS STATE
-        active: true,
-        classPhase: "instruction",
-        lessonLocked: false,
-        questionOpen: false,
+// 🔥 SAFEST VERSION
+teacherName:
+  auth.currentUser?.displayName ||
+  auth.currentUser?.email ||
+  "Teacher",
 
-        // 🔥 REQUIRED FOR QUESTIONS TO WORK
-        category: "Drugs",          // 👈 CHANGE THIS IF NEEDED
-        currentLesson: 1,
-        currentQuestion: 1,
+joinCode: code,
+createdAt: Date.now(),
 
-        // 🔥 SESSION + FLOW
-        activeSessionId: null,
-        spotlightResponseId: null,
+// ✅ CORE CLASS STATE
+active: true,
+classPhase: "instruction",
+lessonLocked: false,
+questionOpen: false,
 
-        // optional but useful
-        currentQuestionIncrement: true
-      });
+// 🔥 REQUIRED FOR QUESTIONS TO WORK
+category: "Drugs",
+currentLesson: 1,
+currentQuestion: 1,
 
-      // ✅ join code mapping
-      await setDoc(doc(db, "joinCodes", code), {
-        classId: docRef.id
-      });
+// 🔥 SESSION + FLOW
+activeSessionId: null,
+spotlightResponseId: null,
 
-      setJoinCode(code);
-      setClassName("");
+// optional but useful
+currentQuestionIncrement: true
+    });
 
-      console.log("CLASS CREATED:", docRef.id);
+    setJoinCode(code);
+    setLoading(false);
+    alert("Class created successfully!");
+  } catch (error) {
+    alert("Error creating class: " + error.message);
+    setLoading(false);
+  }
+};
 
-    } catch (err) {
-      console.error("CREATE CLASS ERROR:", err);
-      alert(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+return (
+  <div style={{ marginBottom: 20 }}>
 
-  return (
-    <div style={{ marginBottom: 20 }}>
+    <input
+      placeholder="New class name"
+      value={className}
+      onChange={(e) => setClassName(e.target.value)}
+      style={{ padding: 10, marginRight: 10 }}
+    />
 
-      <input
-        placeholder="New class name"
-        value={className}
-        onChange={(e) => setClassName(e.target.value)}
-        style={{ padding: 10, marginRight: 10 }}
-      />
+    <button onClick={createClass} disabled={loading}>
+      {loading ? "Creating..." : "Create Class"}
+    </button>
 
-      <button onClick={createClass} disabled={loading}>
-        {loading ? "Creating..." : "Create Class"}
-      </button>
+    {joinCode && (
+      <div style={{ marginTop: 10 }}>
+        <strong>Join Code:</strong> {joinCode}
+      </div>
+    )}
 
-      {joinCode && (
-        <div style={{ marginTop: 10 }}>
-          <strong>Join Code:</strong> {joinCode}
-        </div>
-      )}
-
-    </div>
-  );
+  </div>
+);
 }

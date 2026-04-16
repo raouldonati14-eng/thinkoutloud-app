@@ -1,81 +1,34 @@
-import React, { useEffect, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "../../firebase";
+import React from "react";
 
-export default function ReasoningHeatmapPanel({ classId, sessionId }) {
-
-  const [responses, setResponses] = useState([]);
-
-  useEffect(() => {
-
-    if (!classId || !sessionId) return;
-
-    const responsesRef = collection(
-      db,
-      "classes",
-      classId,
-      "sessions",
-      sessionId,
-      "responses"
-    );
-
-    const unsubscribe = onSnapshot(responsesRef, (snapshot) => {
-
-      const list = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      setResponses(list);
-
-    });
-
-    return () => unsubscribe();
-
-  }, [classId, sessionId]);
-
+export default function ReasoningHeatmapPanel({ responses = [] }) {
   const getColor = (score) => {
-
-    if (score >= 0.75) return "#51cf66"; // strong
-    if (score >= 0.4) return "#ffd43b";  // developing
-    return "#ff6b6b";                    // weak
-
+    if (score >= 3) return "#51cf66";
+    if (score >= 2) return "#ffd43b";
+    return "#ff6b6b";
   };
 
   return (
-
     <div style={styles.container}>
-
       <h3>Reasoning Heatmap</h3>
 
       <div style={styles.grid}>
-
-        {responses.map(r => (
-
+        {responses.map((response) => (
           <div
-            key={r.id}
+            key={response.id}
             style={{
               ...styles.tile,
-              background: getColor(r.score || 0)
+              background: getColor(response.score || 0)
             }}
           >
-
-            {r.student}
-
+            {response.studentName || response.studentId}
           </div>
-
         ))}
-
       </div>
-
     </div>
-
   );
-
 }
 
 const styles = {
-
   container: {
     background: "#fff",
     padding: 20,
@@ -83,13 +36,11 @@ const styles = {
     boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
     marginBottom: 20
   },
-
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(120px,1fr))",
     gap: 10
   },
-
   tile: {
     padding: 10,
     borderRadius: 6,
@@ -97,5 +48,4 @@ const styles = {
     fontWeight: 500,
     color: "#222"
   }
-
 };

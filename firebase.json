@@ -7,15 +7,11 @@
       "**/node_modules/**"
     ],
     "rewrites": [
-  {
-    "source": "/teacher/**",
-    "destination": "/index.html"
-  },
-  {
-    "source": "**",
-    "destination": "/index.html"
-  }
-]
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
   },
   "firestore": {
     "database": "(default)",

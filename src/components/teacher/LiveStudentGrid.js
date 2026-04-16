@@ -56,55 +56,57 @@ export default function LiveStudentGrid({ classId }) {
 
   /* ================= UI ================= */
 
-  return (
+ return (
+  <div style={styles.container}>
+    <h3>Live Student Grid</h3>
 
-    <div style={styles.container}>
+    <div style={styles.grid}>
+      {responses.map(r => (
+        <div
+          key={r.id}
+          style={{
+            ...styles.card,
+            background: getColor(r)
+          }}
+        >
+          <strong>{r.student}</strong>
 
-      <h3>Live Student Grid</h3>
-
-      <div style={styles.grid}>
-
-        {responses.map(r => (
-
-          <div
-            key={r.id}
+          {/* 🔥 LATE LABEL */}
+          <span
             style={{
-              ...styles.card,
-              background:getColor(r)
+              marginLeft: 10,
+              color: r.isLate ? "#f08c00" : "#2f9e44",
+              fontWeight: "bold"
             }}
           >
+           {r.isLate ? "🕒 Extended" : "✔ On time"}
+          </span>
 
-            <strong>{r.student}</strong>
-
-            <div style={styles.meta}>
-
-              {r.status === "recording" && "Recording"}
-
-              {r.status === "submitted" &&
-                `${r.durationSeconds || 0}s`
-              }
-
-              {!r.status && "Waiting"}
-
-            </div>
-
+          {/* RESPONSE TEXT */}
+          <div style={{ marginTop: 5 }}>
+            {r.responseText}
           </div>
 
-        ))}
+          {/* META INFO */}
+          <div style={styles.meta}>
+            {r.status === "recording" && "Recording"}
 
-      </div>
+            {r.status === "submitted" &&
+              `${r.durationSeconds || 0}s`}
 
-      {!responses.length && (
-        <p style={styles.empty}>
-          No student activity yet
-        </p>
-      )}
-
+            {!r.status && "Waiting"}
+          </div>
+        </div>
+      ))}
     </div>
 
-  );
-
-}
+    {!responses.length && (
+      <p style={styles.empty}>
+        No student activity yet
+      </p>
+    )}
+  </div>
+);
 
 /* ================= STYLES ================= */
 
@@ -143,3 +145,5 @@ const styles = {
   }
 
 };
+
+}

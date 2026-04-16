@@ -1,41 +1,36 @@
 import React from "react";
 
 function TeacherTimelinePanel({ responses }) {
-
   if (!responses?.length) {
     return null;
   }
 
-  const sorted = [...responses].sort(
-    (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
-  );
+  const toMillis = (value) => {
+    if (typeof value === "number") return value;
+    if (value?.toMillis) return value.toMillis();
+    if (value?.seconds) return value.seconds * 1000;
+    return 0;
+  };
+
+  const sorted = [...responses].sort((a, b) => {
+    return toMillis(a.createdAt) - toMillis(b.createdAt);
+  });
 
   return (
-
     <div style={styles.card}>
-
       <strong>Discussion Timeline</strong>
-
-      {sorted.map((r) => (
-
-        <div key={r.id} style={styles.row}>
-
+      {sorted.map((response) => (
+        <div key={response.id} style={styles.row}>
           <span style={styles.student}>
-            {r.student}
+            {response.studentName || response.studentId}
           </span>
-
           <span style={styles.score}>
-            Score: {r.score ?? "-"}
+            Score: {response.score ?? "-"}
           </span>
-
         </div>
-
       ))}
-
     </div>
-
   );
-
 }
 
 export default React.memo(TeacherTimelinePanel);
