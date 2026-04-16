@@ -61,7 +61,7 @@ export default function TeacherDashboard({ classId }) {
 
   // 🔹 STATE
   const [classData, setClassData] = useState(null);
-  const { recordingState } = useRecordingState(classData || {});
+  const {recordingState } = useRecordingState(classData || {});
   const [responses, setResponses] = useState([]);
   const [allResponses, setAllResponses] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -70,6 +70,7 @@ export default function TeacherDashboard({ classId }) {
   const [prompts, setPrompts] = useState([]);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState("live");
+  const [classes, setClasses] = useState([]);
 
   // 🔹 LANGUAGE STATE
   const [teacherLanguage, setTeacherLanguage] = useState("en");
@@ -114,7 +115,24 @@ export default function TeacherDashboard({ classId }) {
     });
     return () => unsubscribe();
   }, [classId]);
+  useEffect(() => {
+  if (!auth.currentUser) return;
 
+  const q = query(
+    collection(db, "classes"),
+    where("teacherId", "==", auth.currentUser.uid)
+  );
+
+  const unsub = onSnapshot(q, (snapshot) => {
+    const list = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    setClasses(list);
+  });
+
+  return () => unsub();
+}, []);
   // 🔹 SESSION ID — use selected session or active session
   const sessionId = classData?.activeSessionId || selectedSession;
 
@@ -464,7 +482,25 @@ export default function TeacherDashboard({ classId }) {
         `}</style>
 
         <h1>{classData?.className || classData?.name || ""}</h1>
+          {/* 🔥 ADD THIS BLOCK RIGHT HERE */}
+<select
+  value={classId}
+  onChange={(e) => {
+    const newClassId = e.target.value;
+    navigate(`/teacher/${newClassId}`);
+  }}
+  style={{ marginBottom: 10, padding: 8 }}
+>
+  {classes.map((c) => (
+    <option key={c.id} value={c.id}>
+      {c.className || "Untitled Class"}
+    </option>
+  ))}
+</select>
 
+<div>
+  <strong>Join Code:</strong> {classData?.joinCode}
+</div>
         {/* JOIN CODE */}
         <div style={{
           marginBottom: 25, padding: 15, background: "#e7f5ff",
@@ -509,7 +545,10 @@ export default function TeacherDashboard({ classId }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <select
               value={teacherLanguage}
-              onChange={(e) => saveTeacherLanguage(e.target.value)}
+              onChange={(e) => {
+  const newClassId = e.target.value;
+  navigate(`/teacher/${newClassId}`);
+}}
               style={{
                 padding: "8px 12px", borderRadius: 6,
                 border: "1px solid #ddd", fontSize: 14,
