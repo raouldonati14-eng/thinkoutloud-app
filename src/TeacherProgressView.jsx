@@ -41,6 +41,9 @@ export default function TeacherProgressView() {
     selectedClass === "All"
       ? students
       : students.filter((s) => s.className === selectedClass);
+  const classOptions = Array.from(
+    new Set(students.map((student) => student.className).filter(Boolean))
+  ).sort();
 
   /* ---------------- COLOR LOGIC ---------------- */
   const getStatusColor = (student) => {
@@ -70,16 +73,11 @@ export default function TeacherProgressView() {
         style={styles.dropdown}
       >
         <option value="All">All Classes</option>
-
-        <option value="Gold 1">Gold 1</option>
-        <option value="Gold 2">Gold 2</option>
-        <option value="Gold 3">Gold 3</option>
-        <option value="Gold 4">Gold 4</option>
-
-        <option value="Black 1">Black 1</option>
-        <option value="Black 2">Black 2</option>
-        <option value="Black 3">Black 3</option>
-        <option value="Black 4">Black 4</option>
+        {classOptions.map((className) => (
+          <option key={className} value={className}>
+            {className}
+          </option>
+        ))}
       </select>
 
       <table style={styles.table}>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import { doc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import EssentialQuestionScreen from "./screens/EssentialQuestionScreen";
@@ -19,6 +19,9 @@ export default function StudentView() {
   const [makeupData, setMakeupData] = useState(null);
   const [makeupStarted, setMakeupStarted] = useState(false);
 
+  // ✅ Planning textarea state — lives here so it persists across pre/during recording
+  const [writtenResponse, setWrittenResponse] = useState("");
+
   // 🌐 TRANSLATED UI STRINGS
   const [ui, setUi] = useState({
     joinClass: "Join Class",
@@ -34,7 +37,9 @@ export default function StudentView() {
     makeupTitle: "You have a make-up assignment",
     makeupCategory: "Category",
     startMakeup: "Start Make-Up",
-    presentationMode: "Presentation Mode"
+    presentationMode: "Presentation Mode",
+    planningPlaceholder: "Write your response here, then press Start and read it aloud...",
+    recordingPlaceholder: "Recording in progress — read your notes aloud..."
   });
 
   const presentationMode = classData?.presentationMode || false;
@@ -58,7 +63,9 @@ export default function StudentView() {
         makeupTitle: "📝 You have a make-up assignment",
         makeupCategory: "Category",
         startMakeup: "▶️ Start Make-Up",
-        presentationMode: "🎬 Presentation Mode"
+        presentationMode: "🎬 Presentation Mode",
+        planningPlaceholder: "Write your response here, then press Start and read it aloud...",
+        recordingPlaceholder: "Recording in progress — read your notes aloud..."
       });
       return;
     }
@@ -68,7 +75,9 @@ export default function StudentView() {
       "📘 Instructions", "⏸ Waiting for teacher...", "▶️ Start Response",
       "⏱ Time is up — you can still respond", "⏱ Take your time",
       "📝 You have a make-up assignment", "Category",
-      "▶️ Start Make-Up", "🎬 Presentation Mode"
+      "▶️ Start Make-Up", "🎬 Presentation Mode",
+      "Write your response here, then press Start and read it aloud...",
+      "Recording in progress — read your notes aloud..."
     ];
 
     translateMany(keys, language, "student").then(translated => {
@@ -86,7 +95,9 @@ export default function StudentView() {
         makeupTitle: translated[10],
         makeupCategory: translated[11],
         startMakeup: translated[12],
-        presentationMode: translated[13]
+        presentationMode: translated[13],
+        planningPlaceholder: translated[14],
+        recordingPlaceholder: translated[15]
       });
     });
   }, [language]);
@@ -102,6 +113,13 @@ export default function StudentView() {
     });
     return () => unsubscribe();
   }, [selectedClassId]);
+
+  // Reset student response state whenever teacher pushes a new active session
+  useEffect(() => {
+    if (!classData?.activeSessionId) return;
+    setStudentStarted(false);
+    setWrittenResponse(""); // ✅ clear planning notes on new session
+  }, [classData?.activeSessionId]);
 
   // 🔥 MAKE-UP LISTENER
   useEffect(() => {
@@ -147,6 +165,7 @@ export default function StudentView() {
     const formattedName = `${capitalize(lastName)}, ${capitalize(firstName)}`;
 
     setStudentStarted(false);
+    setWrittenResponse("");
     setClassData(null);
     setClassLoaded(false);
     setSelectedClassId(classId);
@@ -208,12 +227,44 @@ export default function StudentView() {
 
             {recordingState !== "waiting" && !studentStarted && (
               <>
-                <div>
-                  {recordingState === "active"
-                    ? `🎤 ${seconds}s`
-                    : ui.timeUp}
+                <div style={{ marginBottom: 12 }}>
+                  {recordingState === "active" ? `🎤 ${seconds}s` : ui.timeUp}
                 </div>
-                <button onClick={() => setStudentStarted(true)}>
+
+                {/* ✅ Planning textarea — visible before student clicks Start */}
+                <textarea
+                  value={writtenResponse}
+                  onChange={(e) => setWrittenResponse(e.target.value)}
+                  placeholder={ui.planningPlaceholder}
+                  style={{
+                    width: "100%",
+                    minHeight: 120,
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #ced4da",
+                    fontSize: 15,
+                    fontFamily: "inherit",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                    lineHeight: 1.5,
+                    marginBottom: 12,
+                    textAlign: "left"
+                  }}
+                />
+
+                <button
+                  onClick={() => setStudentStarted(true)}
+                  style={{
+                    padding: "10px 20px",
+                    background: "#228be6",
+                    color: "white",
+                    border: "none",
+                    borderRadius: 6,
+                    fontWeight: "bold",
+                    fontSize: 16,
+                    cursor: "pointer"
+                  }}
+                >
                   {ui.startResponse}
                 </button>
               </>
@@ -221,18 +272,43 @@ export default function StudentView() {
 
             {studentStarted && (
               <>
-                <div>
-                  {recordingState === "active"
-                    ? `⏱ ${seconds}s`
-                    : ui.takeYourTime}
+                <div style={{ marginBottom: 8 }}>
+                  {recordingState === "active" ? `⏱ ${seconds}s` : ui.takeYourTime}
                 </div>
+
+                {/* ✅ Planning textarea — stays visible during recording, read-only hint */}
+                <textarea
+                  value={writtenResponse}
+                  onChange={(e) => setWrittenResponse(e.target.value)}
+                  placeholder={ui.recordingPlaceholder}
+                  style={{
+                    width: "100%",
+                    minHeight: 120,
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #ced4da",
+                    fontSize: 15,
+                    fontFamily: "inherit",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                    lineHeight: 1.5,
+                    marginBottom: 12,
+                    textAlign: "left",
+                    background: "#f8f9fa"
+                  }}
+                  readOnly
+                />
+
                 <EssentialQuestionScreen
+                  key={`normal-${classData?.activeSessionId || "none"}-${classData?.currentQuestion || ""}`}
                   classCode={joinCode}
                   classId={selectedClassId}
                   student={student}
                   classData={classData}
                   language={language}
+                  studentLanguage={language}
                   translatedQuestion={t("essentialQuestion")}
+                  writtenResponse={writtenResponse}
                 />
               </>
             )}
@@ -400,11 +476,14 @@ export default function StudentView() {
         {/* MAKE-UP RESPONSE */}
         {makeupData && makeupStarted && (
           <EssentialQuestionScreen
+            key={`makeup-${classData?.activeSessionId || "none"}-${makeupData?.questionText || ""}`}
             classCode={joinCode}
             classId={selectedClassId}
             student={student}
             language={language}
+            studentLanguage={language}
             translatedQuestion={t("essentialQuestion")}
+            writtenResponse={writtenResponse}
             classData={{
               ...classData,
               essentialQuestion: makeupData.questionText,

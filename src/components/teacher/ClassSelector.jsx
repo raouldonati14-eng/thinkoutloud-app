@@ -3,11 +3,10 @@ export default function ClassSelector({
   selectedClassId,
   onSelect
 }) {
-  // Filter out any "ghost" classes that don't have a name or ID
-  const validClasses = classes.filter(c => c.className);
+  const validClasses = classes.filter((c) => c?.id && (c?.className || c?.name));
 
   if (validClasses.length === 0) {
-    return <div style={{ color: 'gray', italic: 'true' }}>No named classes available.</div>;
+    return <div style={{ color: "gray", fontStyle: "italic" }}>No named classes available.</div>;
   }
 
   return (
@@ -26,7 +25,7 @@ export default function ClassSelector({
         <option value="" disabled>-- Choose a Class --</option>
         {validClasses.map((c) => (
           <option key={c.id} value={c.id}>
-            {c.name || c.className}
+            {c.className || c.name}
           </option>
         ))}
       </select>

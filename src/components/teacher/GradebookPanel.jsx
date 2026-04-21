@@ -25,7 +25,11 @@ function csvEscape(value) {
   return `"${safe}"`;
 }
 
-export default function GradebookPanel({ responses = [], sessions = [] }) {
+export default function GradebookPanel({
+  responses = [],
+  sessions = [],
+  onDeleteResponse
+}) {
   const [studentFilter, setStudentFilter] = useState("");
   const [questionFilter, setQuestionFilter] = useState("");
   const [scoreFilter, setScoreFilter] = useState("all");
@@ -270,6 +274,15 @@ export default function GradebookPanel({ responses = [], sessions = [] }) {
                       {entry.attempts.map((attempt, index) => (
                         <span key={attempt.id} style={styles.attemptChip}>
                           A{attempt.attemptNumber || index + 1}: {attempt.score ?? "—"}
+                          {onDeleteResponse && attempt?.id ? (
+                            <button
+                              onClick={() => onDeleteResponse(attempt)}
+                              style={styles.deleteAttemptBtn}
+                              title="Delete this response attempt"
+                            >
+                              Delete
+                            </button>
+                          ) : null}
                         </span>
                       ))}
                     </div>
@@ -385,6 +398,19 @@ const styles = {
     borderRadius: 999,
     padding: "4px 8px",
     fontSize: 12,
-    fontWeight: 600
+    fontWeight: 600,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6
+  },
+  deleteAttemptBtn: {
+    border: "none",
+    borderRadius: 999,
+    background: "#ffd8d8",
+    color: "#c92a2a",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: 11,
+    padding: "2px 8px"
   }
 };

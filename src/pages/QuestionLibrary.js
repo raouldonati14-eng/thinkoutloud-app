@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from "react";
 import questionsData from "../data/questions.json";
+import { useSearchParams } from "react-router-dom";
 import {
   collection,
   addDoc,
   onSnapshot,
   doc,
   setDoc,
-  updateDoc,
+  getDoc,
   query,
   where
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { buildQuestionPrompts } from "../utils/questionPrompts";
+import { translateText } from "../utils/translate";
 
 export default function QuestionLibrary() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [newQuestion, setNewQuestion] = useState("");
   const [newCategory, setNewCategory] = useState("");
   const [newLesson, setNewLesson] = useState("");
@@ -23,6 +26,7 @@ export default function QuestionLibrary() {
   const [selectedClasses, setSelectedClasses] = useState([]);
   const [showOnlyMine, setShowOnlyMine] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [teacherId, setTeacherId] = useState(null);
 
   // 🔥 LOAD FIRESTORE QUESTIONS
   useEffect(() => {
@@ -36,35 +40,63 @@ export default function QuestionLibrary() {
     return () => unsubscribe();
   }, []);
 
-  // 🔥 LOAD TEACHER CLASSES (waits for auth)
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (!user) return;
-
-      const q = query(
-        collection(db, "classes"),
-        where("teacherId", "==", user.uid)
-      );
-
-      const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-        const list = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setClasses(list);
-      });
-
-      return () => unsubscribeSnapshot();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setTeacherId(user?.uid || null);
     });
 
-    return () => unsubscribeAuth();
+    return () => unsubscribe();
   }, []);
+
+  // 🔥 LOAD TEACHER CLASSES (waits for auth)
+  useEffect(() => {
+    if (!teacherId) {
+      setClasses([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, "classes"),
+      where("teacherId", "==", teacherId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs
+        .map((classDoc) => ({
+          id: classDoc.id,
+          ...classDoc.data()
+        }))
+        .filter((classItem) => classItem.className || classItem.name);
+
+      setClasses(list);
+    });
+
+    return () => unsubscribe();
+  }, [teacherId]);
+
+  useEffect(() => {
+    const classIdFromUrl = searchParams.get("classId");
+    if (!classIdFromUrl) return;
+
+    setSelectedClasses((prev) =>
+      prev.includes(classIdFromUrl) ? prev : [classIdFromUrl, ...prev]
+    );
+  }, [searchParams]);
 
   // 🔥 TOGGLE CLASS SELECTION
   const toggleClass = (id) => {
-    setSelectedClasses(prev =>
-      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
-    );
+    setSelectedClasses((prev) => {
+      const next = prev.includes(id)
+        ? prev.filter((classId) => classId !== id)
+        : [...prev, id];
+
+      const primaryClassId = next[0] || "";
+      if (primaryClassId) {
+        setSearchParams({ classId: primaryClassId });
+      }
+
+      return next;
+    });
   };
 
   // 🔥 MULTI-CLASS ASSIGN
@@ -75,32 +107,52 @@ export default function QuestionLibrary() {
     }
 
     try {
-      const prompts = buildQuestionPrompts(question.text, question.category);
+      const currentLesson = Number(question.lesson) || 1;
+      const currentQuestion = `${question.category || "General"} Lesson ${currentLesson} Question 1`;
 
       for (const classId of selectedClasses) {
         const classRef = doc(db, "classes", classId);
+        const classSnap = await getDoc(classRef);
+        const classData = classSnap.exists() ? classSnap.data() : {};
+        const teacherLanguage = classData?.teacherLanguage || "en";
+        const basePrompts = buildQuestionPrompts(question.text, question.category);
+        const essentialQuestion = await translateText(
+          question.text,
+          teacherLanguage,
+          "teacher"
+        );
+        const discussionPrompts = await Promise.all(
+          basePrompts.discussionPrompts.map((prompt) =>
+            translateText(prompt, teacherLanguage, "teacher")
+          )
+        );
+        const reflectionPrompts = await Promise.all(
+          basePrompts.reflectionPrompts.map((prompt) =>
+            translateText(prompt, teacherLanguage, "teacher")
+          )
+        );
         const sessionRef = doc(collection(db, "classes", classId, "sessions"));
 
         await setDoc(sessionRef, {
-          questionText: question.text,
+          questionText: essentialQuestion,
           questionId: question.id || null,
           category: question.category,
-          lesson: question.lesson || 1,
-          discussionPrompts: prompts.discussionPrompts,
-          reflectionPrompts: prompts.reflectionPrompts,
+          lesson: currentLesson,
+          discussionPrompts,
+          reflectionPrompts,
           createdAt: Date.now()
         });
 
-        await updateDoc(classRef, {
+        await setDoc(classRef, {
           activeSessionId: sessionRef.id,
-          essentialQuestion: question.text,
+          essentialQuestion,
           category: question.category,
-          currentLesson: question.lesson || 1,
-          currentQuestion: 1,
-          discussionPrompts: prompts.discussionPrompts,
-          reflectionPrompts: prompts.reflectionPrompts,
+          currentLesson,
+          currentQuestion,
+          discussionPrompts,
+          reflectionPrompts,
           questionOpen: true
-        });
+        }, { merge: true });
       }
 
       alert("✅ Assigned to selected classes!");
@@ -184,7 +236,7 @@ export default function QuestionLibrary() {
                   onChange={() => toggleClass(c.id)}
                 />
                 <span>
-                  <strong>{c.name || "Unnamed Class"}</strong>
+                  <strong>{c.className || c.name}</strong>
                   {c.category && (
                     <span style={{ color: "#888", fontSize: 13, marginLeft: 8 }}>
                       {c.category} — Lesson {c.currentLesson || 1}

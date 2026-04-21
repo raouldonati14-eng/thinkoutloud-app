@@ -1,6 +1,7 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { transcribeFromGCS } from "./services/speech.js";
+import OpenAI from "openai";
 
 admin.initializeApp();
 
@@ -231,5 +232,68 @@ export const submitStudentResponse = onCall(
         conceptConnections: conceptLinks
       }
     };
+  }
+);
+
+/* ================= TRANSLATE FUNCTION ================= */
+
+export const translate = onRequest(
+  { region: "us-central1", cors: true },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(405).end(); return; }
+
+    // ✅ Move it here — inside the handler
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const { text, texts, targetLanguage, context = "student" } = req.body || {};
+
+    const langName: Record<string, string> = {
+      es: "Español", pt: "Português", fr: "Français", ht: "Kreyòl Ayisyen",
+      ar: "Arabic", zh: "Chinese", vi: "Vietnamese", tl: "Tagalog",
+      ko: "Korean", pl: "Polski", ru: "Russian", so: "Soomaali",
+      ur: "Urdu", hi: "Hindi", it: "Italiano"
+    };
+
+    const audience = context === "teacher"
+      ? "for a high school teacher"
+      : context === "scoring"
+        ? "for rubric scoring while preserving exact meaning"
+        : "for a 9th grade student";
+
+    const translateText = async (t: string) => {
+      const r = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: `Translate into ${langName[targetLanguage] || targetLanguage} ${audience}. Return ONLY the translated text.`
+          },
+          { role: "user", content: t }
+        ]
+      });
+      return r?.choices?.[0]?.message?.content?.trim() || t;
+    };
+
+    try {
+      if (Array.isArray(texts)) {
+        if (!targetLanguage || targetLanguage === "en") {
+          res.json({ translations: texts }); return;
+        }
+        const translations = await Promise.all(texts.map(translateText));
+        res.json({ translations }); return;
+      }
+
+      if (!text || !targetLanguage || targetLanguage === "en") {
+        res.json({ translatedText: text }); return;
+      }
+
+      res.json({ translatedText: await translateText(text) });
+    } catch (err) {
+      console.error("Translation error:", err);
+      Array.isArray(texts)
+        ? res.json({ translations: texts })
+        : res.json({ translatedText: text });
+    }
   }
 );

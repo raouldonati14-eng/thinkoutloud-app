@@ -8,7 +8,7 @@ export default function LiveResponseGrid({ classId, responses = [] }) {
   useEffect(() => {
     if (!classId) return;
 
-    const studentsRef = collection(db, "classes", classId, "students");
+    const studentsRef = collection(db, "classes", classId, "roster");
 
     const unsub = onSnapshot(studentsRef, (snapshot) => {
       const list = snapshot.docs.map((studentDoc) => ({

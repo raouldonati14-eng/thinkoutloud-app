@@ -1,27 +1,69 @@
 import React, { useState } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "./firebase";
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth";
+import { auth, authPersistenceReady } from "./firebase";
 
 export default function TeacherLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let unsubscribe = () => {};
+
+    const initAuth = async () => {
+      try {
+        await authPersistenceReady;
+      } catch (error) {
+        console.error("AUTH READY ERROR", error);
+      }
+
+      unsubscribe = onAuthStateChanged(auth, (user) => {
+        console.log("TEACHER LOGIN AUTH STATE", user);
+        if (user) {
+          navigate("/teacher");
+        }
+        setLoading(false);
+      });
+    };
+
+    initAuth();
+
+    return () => unsubscribe();
+  }, [navigate]);
 
   const handleLogin = async () => {
     console.log("LOGIN CLICKED");
 
     try {
+      setIsSubmitting(true);
       setLoginError("");
-      const result = await signInWithEmailAndPassword(auth, email, password);
+      await authPersistenceReady;
+      const result = await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
 
       console.log("LOGIN SUCCESS", result.user);
+      navigate("/teacher");
     } catch (err) {
       console.error("LOGIN ERROR", err.code, err.message);
       const message = "LOGIN ERROR: " + err.code + " - " + err.message;
       setLoginError(message);
       alert(message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  if (loading) {
+    return <div style={{ padding: 40 }}>Loading...</div>;
+  }
 
   return (
     <div style={{ padding: 40 }}>
@@ -49,7 +91,9 @@ export default function TeacherLogin() {
         style={{ display: "block", marginBottom: 10 }}
       />
 
-      <button onClick={handleLogin}>Force Login</button>
+      <button onClick={handleLogin} disabled={isSubmitting}>
+        {isSubmitting ? "Logging in..." : "Force Login"}
+      </button>
     </div>
   );
 }

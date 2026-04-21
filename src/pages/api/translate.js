@@ -6,36 +6,52 @@ const openai = new OpenAI({
 
 export const SUPPORTED_LANGUAGES = {
   en: "English",
-  es: "Español",
-  pt: "Português",
-  fr: "Français",
-  ht: "Kreyòl Ayisyen",
-  ar: "العربية",
-  zh: "中文",
-  vi: "Tiếng Việt",
+  es: "Espanol",
+  pt: "Portugues",
+  fr: "Francais",
+  ht: "Kreyol Ayisyen",
+  ar: "Arabic",
+  zh: "Chinese",
+  vi: "Vietnamese",
   tl: "Tagalog",
-  ko: "한국어",
+  ko: "Korean",
   pl: "Polski",
-  ru: "Русский",
+  ru: "Russian",
   so: "Soomaali",
-  ur: "اردو",
-  hi: "हिन्दी"
+  ur: "Urdu",
+  hi: "Hindi",
+  it: "Italiano"
 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { text, targetLang, context = "student" } = req.body;
+  const {
+    text,
+    targetLang,
+    context = "student",
+    sourceLang = null,
+    force = false
+  } = req.body;
 
-  if (!text || !targetLang || targetLang === "en") {
+  if (!text || !targetLang || (targetLang === "en" && !force)) {
     return res.status(200).json({ translated: text });
   }
 
   const langName = SUPPORTED_LANGUAGES[targetLang] || targetLang;
 
-  const systemPrompt = context === "teacher"
-    ? `You are a professional educational translator. Translate the following into ${langName} for a high school teacher. Keep all formatting, punctuation, and meaning exactly the same. Return only the translated text.`
-    : `You are a professional educational translator. Translate the following into ${langName} for a 9th grade student. Keep the language clear and age-appropriate. Return only the translated text.`;
+  const baseContext =
+    context === "teacher"
+      ? "for a high school teacher"
+      : context === "scoring"
+        ? "for assessment processing while preserving meaning exactly"
+        : "for a 9th grade student";
+
+  const sourceHint = sourceLang
+    ? `The source language is likely ${SUPPORTED_LANGUAGES[sourceLang] || sourceLang}.`
+    : "";
+
+  const systemPrompt = `You are a professional educational translator. Translate the following into ${langName} ${baseContext}. ${sourceHint} Keep formatting, punctuation, and meaning intact. Return only the translated text.`;
 
   try {
     const response = await openai.chat.completions.create({
@@ -50,9 +66,9 @@ export default async function handler(req, res) {
     res.status(200).json({
       translated: response.choices[0].message.content.trim()
     });
-
   } catch (error) {
     console.error("Translation error:", error);
     res.status(500).json({ error: "Translation failed", translated: text });
   }
 }
+

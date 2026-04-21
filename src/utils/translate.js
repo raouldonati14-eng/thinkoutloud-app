@@ -1,39 +1,76 @@
+// src/utils/translate.js
+
 export const SUPPORTED_LANGUAGES = {
   en: "English",
   es: "Español",
   pt: "Português",
   fr: "Français",
   ht: "Kreyòl Ayisyen",
-  ar: "العربية",
-  zh: "中文",
-  vi: "Tiếng Việt",
+  ar: "Arabic",
+  zh: "Chinese",
+  vi: "Vietnamese",
   tl: "Tagalog",
-  ko: "한국어",
+  ko: "Korean",
   pl: "Polski",
-  ru: "Русский",
+  ru: "Russian",
   so: "Soomaali",
-  ur: "اردو",
-  hi: "हिن्दी"
+  ur: "Urdu",
+  hi: "Hindi",
+  it: "Italiano"
 };
 
 const cache = {};
 
-export async function translateText(text, targetLang, context = "student") {
-  if (!text || targetLang === "en") return text;
+// 🔹 SINGLE TRANSLATION
+export async function translateText(
+  text,
+  targetLang,
+  context = "student",
+  options = {}
+) {
+  const { sourceLang = null, force = false } = options;
 
-  const key = `${targetLang}:${context}:${text}`;
+  if (!text || typeof text !== "string") return text;
+
+  const trimmed = text.trim();
+  if (!trimmed) return text;
+
+  if (targetLang === "en" && !force) return text;
+
+  const key = `${targetLang}:${context}:${sourceLang || ""}:${force ? "1" : "0"}:${trimmed}`;
+
   if (cache[key]) return cache[key];
 
   try {
-    const res = await fetch("/api/translate", {
+    const res = await fetch("/api/translate", {   // ✅ CORRECT (same origin)
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, targetLang, context })
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text: trimmed,
+        targetLanguage: targetLang,
+        context,
+        sourceLang,
+        force,
+      }),
     });
 
+    // 🔥 handle bad responses safely
+    if (!res.ok) {
+      console.error("Translation API error:", res.status);
+      return text;
+    }
+
     const data = await res.json();
-    const result = data.translated || text;
+
+    const result =
+      data.translatedText ||
+      data.translated ||
+      text;
+
     cache[key] = result;
+
     return result;
   } catch (err) {
     console.error("Translation failed:", err);
@@ -41,7 +78,44 @@ export async function translateText(text, targetLang, context = "student") {
   }
 }
 
+// 🔹 BATCH TRANSLATION
 export async function translateMany(strings, targetLang, context = "student") {
+  if (!Array.isArray(strings) || strings.length === 0) return [];
   if (targetLang === "en") return strings;
-  return Promise.all(strings.map(s => translateText(s, targetLang, context)));
+
+  try {
+    const res = await fetch("/api/translate", {   // ✅ CORRECT
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        texts: strings,
+        targetLanguage: targetLang,
+        context,
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("Batch API error:", res.status);
+      return strings;
+    }
+
+    const data = await res.json();
+
+    return data.translations || strings;
+  } catch (err) {
+    console.error("Batch translation failed:", err);
+    return strings;
+  }
+}
+
+// 🔹 FOR SCORING
+export async function translateForScoring(text, sourceLang) {
+  if (!text || !sourceLang || sourceLang === "en") return text;
+
+  return translateText(text, "en", "scoring", {
+    sourceLang,
+    force: true,
+  });
 }

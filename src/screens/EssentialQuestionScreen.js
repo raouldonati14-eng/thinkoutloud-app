@@ -2,24 +2,27 @@ import React, { useEffect, useState } from "react";
 import { db } from "../firebase";
 import {
   doc,
-  getDoc,
-  collection,
-  getDocs,
-  query,
-  where
+  getDoc
 } from "firebase/firestore";
 
 import ThinkOutLoudRecorder from "../components/ThinkOutLoudRecorder";
+import { resolveQuestionIdentity } from "../utils/questionIdentity";
 
 export default function EssentialQuestionScreen({
   classCode,
   classId,
   student,
-  classData
+  classData,
+  translatedQuestion,
+  studentLanguage = "en",
+  writtenResponse: initialWrittenResponse = ""
 }) {
-  const [loading, setLoading] = useState(true);
-  const [question, setQuestion] = useState(null);
   const [spotlight, setSpotlight] = useState(null);
+  const [writtenResponse, setWrittenResponse] = useState(initialWrittenResponse);
+  const [isRecording, setIsRecording] = useState(false);
+
+  const identity = resolveQuestionIdentity(classData || {});
+  const questionText = translatedQuestion || identity.text;
 
   useEffect(() => {
     if (!classData) return;
@@ -54,73 +57,7 @@ export default function EssentialQuestionScreen({
     loadSpotlight();
   }, [classData, classId]);
 
-  useEffect(() => {
-    if (!classData?.questionOpen) return;
-
-    if (
-      !classData.category ||
-      classData.currentLesson === null ||
-      classData.currentQuestion === null
-    ) {
-      console.log("Waiting for full class data...");
-      return;
-    }
-
-    const loadQuestion = async () => {
-      setLoading(true);
-
-      try {
-        const q = query(
-          collection(db, "questions"),
-          where("category", "==", classData.category),
-          where("lesson", "==", classData.currentLesson)
-        );
-
-        const snap = await getDocs(q);
-
-        if (snap.empty) {
-          console.error("NO QUESTIONS FOUND:", classData);
-          setQuestion(null);
-          setLoading(false);
-          return;
-        }
-
-        const allQuestions = snap.docs.map((questionDoc) => ({
-          id: questionDoc.id,
-          ...questionDoc.data()
-        }));
-
-        if (process.env.NODE_ENV === "development") {
-          console.log("QUERY VALUES:", {
-            category: classData.category,
-            lesson: classData.currentLesson
-          });
-          console.log("ALL QUESTIONS:", allQuestions);
-        }
-
-        const match = allQuestions.find(
-          (candidate) =>
-            Number(candidate.order) === Number(classData.currentQuestion)
-        );
-
-        if (process.env.NODE_ENV === "development") {
-          console.log("MATCHED:", match);
-        }
-
-        setQuestion(match || null);
-      } catch (err) {
-        console.error("Question error:", err);
-      }
-
-      setLoading(false);
-    };
-
-    loadQuestion();
-  }, [classData]);
-
-  if (loading) return <div style={{ padding: 40 }}>Loading...</div>;
-
-  if (!question) {
+  if (!questionText) {
     return <div style={{ padding: 40 }}>Waiting for your teacher...</div>;
   }
 
@@ -140,17 +77,49 @@ export default function EssentialQuestionScreen({
         </div>
       )}
 
-      <h1>{question.title}</h1>
-      <p style={{ fontSize: 18 }}>{question.text}</p>
+      <h1>{identity.title || "Essential Question"}</h1>
+      <p style={{ fontSize: 18 }}>{questionText}</p>
+
+      {/* ✅ Planning textarea — editable before recording, read-only during */}
+      <textarea
+        value={writtenResponse}
+        onChange={(e) => setWrittenResponse(e.target.value)}
+        readOnly={isRecording}
+        placeholder={
+          isRecording
+            ? "Recording in progress — read your notes aloud..."
+            : "Write your response here, then press Start and read it aloud..."
+        }
+        style={{
+          width: "100%",
+          minHeight: 120,
+          padding: "10px 12px",
+          borderRadius: 8,
+          border: "1px solid #ced4da",
+          fontSize: 15,
+          fontFamily: "inherit",
+          resize: "vertical",
+          boxSizing: "border-box",
+          lineHeight: 1.5,
+          marginBottom: 16,
+          textAlign: "left",
+          background: isRecording ? "#f8f9fa" : "#ffffff",
+          color: isRecording ? "#495057" : "#212529"
+        }}
+      />
 
       <ThinkOutLoudRecorder
         student={student?.name || student}
-        questionId={question?.id}
-        questionText={question?.text}
+        questionId={identity.title || classData?.activeSessionId || null}
+        questionText={questionText}
         category={classData?.category}
         classCode={classCode}
         classId={classId}
         sessionId={classData?.activeSessionId}
+        teacherLanguage={classData?.teacherLanguage || "en"}
+        studentLanguage={studentLanguage}
+        writtenResponse={writtenResponse}
+        onRecordingChange={setIsRecording}
       />
     </div>
   );
