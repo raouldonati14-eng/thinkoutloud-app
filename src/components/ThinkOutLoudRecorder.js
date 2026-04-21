@@ -14,7 +14,7 @@ import {
 import { highlightReasoning } from "../utils/highlightReasoning";
 import { getRubricLevel } from "./teacher/ScoringRubricPanel";
 import { translateForScoring, translateText } from "../utils/translate";
-import T from "./common/T";
+import T from "../common/T";
 import { useBatchTranslate } from "../hooks/useBatchTranslate";
 
 const ScoreBreakdown = ({ score, studentLanguage }) => {
@@ -482,6 +482,7 @@ export default function ThinkOutLoudRecorder({
   const [attempts, setAttempts] = useState([]);
   const [activeResponseId, setActiveResponseId] = useState(null);
   const [transcript, setTranscript] = useState("");
+  const [writtenResponse, setWrittenResponse] = useState("");
   const [phase, setPhase] = useState("recording");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -633,6 +634,7 @@ export default function ThinkOutLoudRecorder({
     setActiveResponseId(null);
     setAudioURL(null);
     setTranscript("");
+    setWrittenResponse("");
     setResponseData(null);
     setTimer(0);
     setPhase("recording");
@@ -694,6 +696,7 @@ export default function ThinkOutLoudRecorder({
     setActiveResponseId(responseIdRef.current);
     setAudioURL(null);
     setTranscript("");
+    setWrittenResponse("");
     setIsSubmitting(false);
     setError("");
 
@@ -908,35 +911,6 @@ export default function ThinkOutLoudRecorder({
               transition: "width 1s linear, background 0.3s"
             }} />
           </div>
-        </div>
-      )}
-
-      {/* ── Planning / writing area (always visible before feedback) ── */}
-      {phase !== "feedback" && phase !== "processing" && (
-        <div style={{ marginBottom: 12 }}>
-          <textarea
-            value={writtenResponse}
-            disabled={recording}
-            placeholder={
-              recording
-                ? "Recording in progress — read your notes aloud..."
-                : "Write your response here, then press Start and read it aloud..."
-            }
-            style={{
-              width: "100%",
-              minHeight: 100,
-              padding: "10px 12px",
-              borderRadius: 8,
-              border: "1px solid #ced4da",
-              fontSize: 15,
-              fontFamily: "inherit",
-              resize: "vertical",
-              boxSizing: "border-box",
-              lineHeight: 1.5,
-              background: recording ? "#f8f9fa" : "#ffffff",
-              color: recording ? "#868e96" : "#212529"
-            }}
-          />
         </div>
       )}
 
