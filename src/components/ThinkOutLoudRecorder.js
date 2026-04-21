@@ -482,7 +482,6 @@ export default function ThinkOutLoudRecorder({
   const [attempts, setAttempts] = useState([]);
   const [activeResponseId, setActiveResponseId] = useState(null);
   const [transcript, setTranscript] = useState("");
-  const [writtenResponse, setWrittenResponse] = useState("");
   const [phase, setPhase] = useState("recording");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -633,8 +632,7 @@ export default function ThinkOutLoudRecorder({
     responseIdRef.current = null;
     setActiveResponseId(null);
     setAudioURL(null);
-    setTranscript("");
-    setWrittenResponse("");
+    setTranscript(""); 
     setResponseData(null);
     setTimer(0);
     setPhase("recording");
@@ -696,7 +694,6 @@ export default function ThinkOutLoudRecorder({
     setActiveResponseId(responseIdRef.current);
     setAudioURL(null);
     setTranscript("");
-    setWrittenResponse("");
     setIsSubmitting(false);
     setError("");
 
