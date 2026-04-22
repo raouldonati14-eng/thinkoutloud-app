@@ -14,7 +14,7 @@ import {
 import { highlightReasoning } from "../utils/highlightReasoning";
 import { getRubricLevel } from "./teacher/ScoringRubricPanel";
 import { translateForScoring, translateText } from "../utils/translate";
-import T from "../common/T";
+import T from "./common/T";
 import { useBatchTranslate } from "../hooks/useBatchTranslate";
 
 const ScoreBreakdown = ({ score, studentLanguage }) => {
