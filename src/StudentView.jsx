@@ -422,7 +422,7 @@ export default function StudentView() {
         )}
 
         {/* NORMAL PHASE */}
-        {!makeupStarted && renderPhase()}
+        {!makeupData && !makeupStarted && renderPhase()}
       </div>
     </div>
   );
