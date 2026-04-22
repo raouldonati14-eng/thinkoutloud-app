@@ -18,6 +18,7 @@ export default function StudentView() {
   const [language, setLanguage] = useState("en");
   const [makeupData, setMakeupData] = useState(null);
   const [makeupStarted, setMakeupStarted] = useState(false);
+  console.log("makeupData:", makeupData, "makeupStarted:", makeupStarted);
 
   // 🌐 TRANSLATED UI STRINGS
   const [ui, setUi] = useState({
