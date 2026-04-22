@@ -14,7 +14,7 @@ import {
 import { highlightReasoning } from "../utils/highlightReasoning";
 import { getRubricLevel } from "./teacher/ScoringRubricPanel";
 import { translateForScoring, translateText } from "../utils/translate";
-import T from "./common/T";
+import T from "../common/T";
 import { useBatchTranslate } from "../hooks/useBatchTranslate";
 
 const ScoreBreakdown = ({ score, studentLanguage }) => {
@@ -457,7 +457,8 @@ function buildAssessment(transcript, studentName, category, questionText) {
 const RECOGNITION_LANGUAGE_MAP = {
   en: "en-US", es: "es-ES", pt: "pt-BR", fr: "fr-FR", ht: "ht-HT",
   ar: "ar-SA", zh: "zh-CN", vi: "vi-VN", tl: "fil-PH", ko: "ko-KR",
-  pl: "pl-PL", ru: "ru-RU", so: "so-SO", ur: "ur-PK", hi: "hi-IN", it: "it-IT"
+  pl: "pl-PL", ru: "ru-RU", so: "so-SO", ur: "ur-PK", hi: "hi-IN", it: "it-IT",
+  ja: "ja-JP"
 };
 
 export default function ThinkOutLoudRecorder({
@@ -632,7 +633,7 @@ export default function ThinkOutLoudRecorder({
     responseIdRef.current = null;
     setActiveResponseId(null);
     setAudioURL(null);
-    setTranscript(""); 
+    setTranscript("");
     setResponseData(null);
     setTimer(0);
     setPhase("recording");

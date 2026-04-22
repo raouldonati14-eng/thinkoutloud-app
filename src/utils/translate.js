@@ -16,8 +16,11 @@ export const SUPPORTED_LANGUAGES = {
   so: "Soomaali",
   ur: "Urdu",
   hi: "Hindi",
+  ja: "日本語",
   it: "Italiano"
 };
+
+const TRANSLATE_URL = "https://translate-763779331556.us-central1.run.app";
 
 const cache = {};
 
@@ -42,7 +45,7 @@ export async function translateText(
   if (cache[key]) return cache[key];
 
   try {
-    const res = await fetch("/api/translate", {   // ✅ CORRECT (same origin)
+    const res = await fetch(TRANSLATE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -56,7 +59,6 @@ export async function translateText(
       }),
     });
 
-    // 🔥 handle bad responses safely
     if (!res.ok) {
       console.error("Translation API error:", res.status);
       return text;
@@ -84,7 +86,7 @@ export async function translateMany(strings, targetLang, context = "student") {
   if (targetLang === "en") return strings;
 
   try {
-    const res = await fetch("/api/translate", {   // ✅ CORRECT
+    const res = await fetch(TRANSLATE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
