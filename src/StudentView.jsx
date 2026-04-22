@@ -223,7 +223,7 @@ export default function StudentView() {
               </>
             )}
 
-            {studentStarted && (
+            {studentStarted && recordingState !== "waiting" && (
               <>
                 <div>
                   {recordingState === "active" ? `⏱ ${seconds}s` : ui.takeYourTime}
