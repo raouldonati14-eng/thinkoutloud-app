@@ -289,7 +289,13 @@ export default function ThinkOutLoudRecorder({
       recognitionRef.current = recognition;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
     const recorder = new MediaRecorder(stream);
     mediaRecorderRef.current = recorder;
     audioChunksRef.current = [];
@@ -323,13 +329,7 @@ export default function ThinkOutLoudRecorder({
     setRecording(true);
     onRecordingChange?.(true);
     intervalRef.current = setInterval(() => {
-      setTimer((prev) => {
-        if (prev + 1 >= MAX_RECORDING_TIME) {
-          stopRecording();
-          return MAX_RECORDING_TIME;
-        }
-        return prev + 1;
-      });
+      setTimer((prev) => prev + 1);
     }, 1000);
 
     try {
@@ -509,13 +509,22 @@ export default function ThinkOutLoudRecorder({
         <div style={{ marginBottom: 12, fontWeight: "bold" }}>
           <T text="Local recording:" lang={studentLanguage} />{" "}
           {Math.floor(timer / 60)}:{(timer % 60).toString().padStart(2, "0")}
-          {" "}/ 0:45
+          {timer < MAX_RECORDING_TIME && (
+            <span style={{ fontSize: 13, fontWeight: 400, color: "#868e96", marginLeft: 8 }}>
+              ({MAX_RECORDING_TIME - timer}s until minimum)
+            </span>
+          )}
+          {timer >= MAX_RECORDING_TIME && (
+            <span style={{ fontSize: 13, fontWeight: 400, color: "#2f9e44", marginLeft: 8 }}>
+              ✓ Minimum reached — stop when ready
+            </span>
+          )}
           <div style={{ marginTop: 6, height: 6, borderRadius: 3, background: "#e9ecef", overflow: "hidden" }}>
             <div style={{
               height: "100%",
               width: `${Math.min((timer / MAX_RECORDING_TIME) * 100, 100)}%`,
-              background: timer >= MAX_RECORDING_TIME - 10 ? "#f03e3e" : "#4dabf7",
-              transition: "width 1s linear, background 0.3s"
+              background: timer >= MAX_RECORDING_TIME ? "#2f9e44" : "#4dabf7",
+              transition: "width 1s linear, background 0.5s"
             }} />
           </div>
         </div>
@@ -537,14 +546,24 @@ export default function ThinkOutLoudRecorder({
         </button>
       )}
 
-      {/* ── Stop button ── */}
-      {recording && (
-        <button onClick={stopRecording}>
+      {/* ── Stop button (before minimum) ── */}
+      {recording && timer < MAX_RECORDING_TIME && (
+        <button onClick={stopRecording} style={{ opacity: 0.6 }}>
           <T text="Stop" lang={studentLanguage} />
         </button>
       )}
 
-      {/* ── Submit button ── */}
+      {/* ── Stop & Submit button (after minimum met) ── */}
+      {recording && timer >= MAX_RECORDING_TIME && (
+        <button
+          onClick={stopRecording}
+          style={{ background: "#2f9e44", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", fontWeight: "bold", cursor: "pointer" }}
+        >
+          <T text="Stop & Submit" lang={studentLanguage} />
+        </button>
+      )}
+
+      {/* ── Submit button (after stopping) ── */}
       {audioURL && phase !== "feedback" && (
         <button disabled={isSubmitting} onClick={finalizeResponse}>
           {isSubmitting ? (
