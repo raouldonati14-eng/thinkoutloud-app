@@ -13,8 +13,7 @@ import {
 } from "firebase/firestore";
 import { highlightReasoning } from "../utils/highlightReasoning";
 import { getRubricLevel } from "./teacher/ScoringRubricPanel";
-import { translateForScoring, translateText } from "../utils/translate";
-import T from "../common/T";
+import T from "./common/T";
 import { useBatchTranslate } from "../hooks/useBatchTranslate";
 
 const ScoreBreakdown = ({ score, studentLanguage }) => {
@@ -805,22 +804,32 @@ export default function ThinkOutLoudRecorder({
         setIsSubmitting(false);
         setError("Feedback is taking longer than expected. Please try submitting again.");
         setStatusMessage("Processing is delayed.");
-      }, 10000);
+      }, 15000);
 
-      const scoringTranscript = await translateForScoring(transcript, studentLanguage || "en");
-      const assessment = buildAssessment(scoringTranscript, student, category, questionText);
-      const assessmentLanguage = studentLanguage || teacherLanguage || "en";
-      const translatedFeedback = await translateText(assessment.feedback, assessmentLanguage, "student");
-      const translatedAnalysis = await translateText(assessment.analysis, assessmentLanguage, "student");
+      // ✅ AI-powered scoring via Firebase Function
+      const scoreRes = await fetch("https://scoreresponse-763779331556.us-central1.run.app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript: transcript || "",
+          writtenResponse: writtenResponse || "",
+          questionText,
+          category,
+          studentName: student,
+          studentLanguage: studentLanguage || "en"
+        })
+      });
+
+      const assessment = await scoreRes.json();
 
       setTimeout(async () => {
         try {
           await updateDoc(responseRef, {
             status: "complete",
             score: assessment.score,
-            feedback: translatedFeedback,
-            analysis: translatedAnalysis,
-            vocabularyUsed: assessment.vocabularyUsed,
+            feedback: assessment.feedback,
+            analysis: assessment.analysis,
+            vocabularyUsed: assessment.vocabularyUsed || [],
             completedAt: serverTimestamp()
           });
         } catch (updateError) {

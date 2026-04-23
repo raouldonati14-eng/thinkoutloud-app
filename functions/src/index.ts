@@ -1,6 +1,6 @@
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
-import { transcribeFromGCS } from "./services/speech.js";
+import { transcribeFromGCS } from "./services/speech";
 import OpenAI from "openai";
 
 admin.initializeApp();
@@ -242,10 +242,8 @@ export const translate = onRequest(
   async (req, res) => {
     if (req.method !== "POST") { res.status(405).end(); return; }
 
-    // ✅ Move it here — inside the handler
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
     const { text, texts, targetLanguage, context = "student" } = req.body || {};
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const langName: Record<string, string> = {
       es: "Español", pt: "Português", fr: "Français", ht: "Kreyòl Ayisyen",
@@ -294,6 +292,106 @@ export const translate = onRequest(
       Array.isArray(texts)
         ? res.json({ translations: texts })
         : res.json({ translatedText: text });
+    }
+  }
+);
+
+/* ================= SCORE RESPONSE FUNCTION ================= */
+export const scoreResponse = onRequest(
+  { region: "us-central1", cors: true, secrets: ["OPENAI_API_KEY"] },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(405).end(); return; }
+
+    const {
+      transcript,
+      writtenResponse,
+      questionText,
+      category,
+      studentName,
+      studentLanguage = "en"
+    } = req.body || {};
+
+    if (!transcript && !writtenResponse) {
+      res.json({
+        score: 1,
+        feedback: "No response was provided.",
+        analysis: "The student did not submit a response.",
+        vocabularyUsed: []
+      });
+      return;
+    }
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const langNames: Record<string, string> = {
+      en: "English", es: "Español", pt: "Português", fr: "Français",
+      ht: "Kreyòl Ayisyen", ar: "Arabic", zh: "Chinese", vi: "Vietnamese",
+      tl: "Tagalog", ko: "Korean", pl: "Polski", ru: "Russian",
+      so: "Soomaali", ur: "Urdu", hi: "Hindi", it: "Italiano", ja: "Japanese"
+    };
+
+    const langName = langNames[studentLanguage] || "English";
+    const responseText = transcript || writtenResponse || "";
+    const writtenText = writtenResponse || "";
+
+    const systemPrompt = `
+You are an expert health education teacher scoring a 9th grade student's spoken response.
+
+RUBRIC:
+- Score 3 (Proficient): Response is complete (35+ words, 2+ sentences), uses 3+ lesson vocabulary terms accurately, AND includes 2+ reasoning signals with content (because, therefore, this leads to, as a result, for example, etc.). The student clearly connects ideas with evidence.
+- Score 2 (Developing): Response is partial (18+ words, 1+ sentences), uses at least 1 vocabulary term, AND includes at least 1 reasoning signal with content.
+- Score 1 (Beginning): Response is very short, missing vocabulary, or lacks any reasoning.
+
+CATEGORY: ${category || "Health"}
+QUESTION: ${questionText || "Explain your thinking about this health topic."}
+STUDENT NAME: ${studentName || "The student"}
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "score": 1, 2, or 3,
+  "feedback": "2-3 sentence encouraging feedback addressed to the student directly in ${langName}. Start with a strength, then give one specific next step.",
+  "analysis": "1-2 sentence teacher-facing explanation of why this score was given, in English.",
+  "vocabularyUsed": ["array", "of", "lesson", "vocabulary", "words", "found", "in", "response"]
+}
+`;
+
+    const userContent = writtenText
+      ? `Spoken response: ${responseText}\n\nWritten notes: ${writtenText}`
+      : `Spoken response: ${responseText}`;
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent }
+        ]
+      });
+
+      const raw = completion.choices?.[0]?.message?.content?.trim() || "";
+
+      // Strip markdown fences if present
+      const clean = raw.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+
+      const parsed = JSON.parse(clean);
+
+      res.json({
+        score: Math.min(3, Math.max(1, Number(parsed.score) || 1)),
+        feedback: parsed.feedback || "Good effort. Keep practicing.",
+        analysis: parsed.analysis || "",
+        vocabularyUsed: Array.isArray(parsed.vocabularyUsed) ? parsed.vocabularyUsed : []
+      });
+
+    } catch (err) {
+      console.error("scoreResponse error:", err);
+      // Fallback so the app never crashes
+      res.json({
+        score: 1,
+        feedback: "We could not generate feedback for this response. Please try again.",
+        analysis: "Scoring failed due to an error.",
+        vocabularyUsed: []
+      });
     }
   }
 );
