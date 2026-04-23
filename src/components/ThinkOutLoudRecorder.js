@@ -32,8 +32,7 @@ const ScoreBreakdown = ({ score, studentLanguage }) => {
     return null;
   }
 
-  const [scoreSummary, overallScore, rubricHeader, ...criteriaTranslated] =
-    translated;
+  const [scoreSummary, overallScore, rubricHeader, ...criteriaTranslated] = translated;
 
   return (
     <div
@@ -49,9 +48,7 @@ const ScoreBreakdown = ({ score, studentLanguage }) => {
       <div>{overallScore}</div>
       {rubric && (
         <div style={{ marginTop: 12 }}>
-          <div
-            style={{ fontWeight: 700, color: rubric.color, marginBottom: 8 }}
-          >
+          <div style={{ fontWeight: 700, color: rubric.color, marginBottom: 8 }}>
             {rubricHeader}
           </div>
           <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
@@ -64,394 +61,6 @@ const ScoreBreakdown = ({ score, studentLanguage }) => {
     </div>
   );
 };
-
-const CATEGORY_SCORING_PROFILES = {
-  Drugs: {
-    vocabulary: [
-      // Core brain/addiction concepts
-      "addiction", "dopamine", "reward", "brain", "craving", "dependence",
-      "withdrawal", "tolerance", "synapses", "psychoactive", "drug misuse", "drug abuse",
-      "antagonism", "synergism",
-      // Drug types — formal
-      "depressant", "stimulant", "hallucinogen", "inhalant", "narcotic",
-      "barbiturate", "amphetamine", "methamphetamine", "cocaine", "opium",
-      "marijuana", "thc", "hashish", "caffeine", "anabolic steroid",
-      "performance enhancing", "club drug",
-      // Drug types — informal (students speak this way)
-      "meth", "weed", "crack", "heroin", "steroids", "ped",
-      // Question-specific concepts
-      "misuse", "appealing", "repeated use", "health risk", "risk", "unfair",
-      "athletic performance", "side effect", "mental health", "mood", "mind", "body"
-    ],
-    synonyms: {
-      "weed": "marijuana", "meth": "methamphetamine", "crack": "cocaine",
-      "steroids": "anabolic steroid", "heroin": "narcotic", "ped": "performance enhancing"
-    },
-    reasoning: [
-      "because", "therefore", "so", "as a result", "this leads to",
-      "which causes", "this affects", "for example", "this means",
-      "which makes", "due to", "since", "even though", "however"
-    ],
-    questionConcepts: {
-      "addiction": ["dopamine", "reward", "craving", "withdrawal", "tolerance", "dependence"],
-      "depressant": ["mood", "brain", "repeated use", "appealing", "club drug", "barbiturate"],
-      "narcotic": ["misuse", "pain", "opium", "dependence", "withdrawal", "hard to stop"],
-      "stimulant": ["energy", "alertness", "cocaine", "amphetamine", "risk", "heart"],
-      "hallucinogen": ["perception", "mind", "inhalant", "risky", "effects"],
-      "marijuana": ["thc", "brain", "mood", "risk", "lung", "effects"],
-      "performance": ["steroid", "unfair", "health", "athlete", "hormone", "risk"]
-    }
-  },
-
-  Tobacco: {
-    vocabulary: [
-      "nicotine", "addiction", "tar", "carbon monoxide", "smokeless tobacco",
-      "alveoli", "emphysema", "trachea", "bronchi", "lungs", "diaphragm",
-      "withdrawal", "psychological dependence", "physical dependence", "tolerance",
-      "relapse", "secondhand smoke", "passive smoker", "mainstream smoke",
-      "sidestream smoke", "respiratory", "nicotine replacement", "cancer",
-      "heart disease", "health risk", "peer pressure", "advertising", "media"
-    ],
-    synonyms: {
-      "smoke": "tobacco", "cig": "tobacco", "cigarette": "tobacco",
-      "chew": "smokeless tobacco", "dip": "smokeless tobacco"
-    },
-    reasoning: [
-      "because", "this causes", "as a result", "which can lead to",
-      "therefore", "this damages", "for example", "since", "which means"
-    ],
-    questionConcepts: {
-      "start": ["peer pressure", "advertising", "curiosity", "stress", "social"],
-      "health risk": ["cancer", "emphysema", "addiction", "heart", "lung", "carbon monoxide"]
-    }
-  },
-
-  Vaping: {
-    vocabulary: [
-      "nicotine", "addiction", "cadmium", "cartridge", "electronic cigarette",
-      "pod", "vape", "vape pen", "vapor", "aerosol", "chemical", "lungs",
-      "health risk", "damage", "alveoli", "respiratory", "flavoring",
-      "teen", "advertising", "appealing", "brain development", "popcorn lung"
-    ],
-    synonyms: {
-      "e-cig": "electronic cigarette", "juul": "vape", "e cigarette": "electronic cigarette"
-    },
-    reasoning: [
-      "because", "this can cause", "which leads to", "as a result",
-      "this damages", "therefore", "for example", "since", "which means"
-    ],
-    questionConcepts: {
-      "reasons": ["flavoring", "advertising", "peer pressure", "social", "curiosity", "stress relief"],
-      "health risk": ["nicotine", "addiction", "aerosol", "chemical", "lung", "cadmium", "brain"]
-    }
-  },
-
-  Alcohol: {
-    vocabulary: [
-      "alcohol", "depressant", "fermentation", "intoxicated", "blood alcohol",
-      "alcohol poisoning", "malnutrition", "overdose", "ulcer", "alcoholism",
-      "neuron", "central nervous system", "binge drinking", "fatty liver", "cirrhosis",
-      "fetal alcohol syndrome", "tolerance", "physical dependence", "withdrawal",
-      "rehabilitation", "detoxification", "relapse", "reaction time", "zero-tolerance",
-      "judgment", "decision", "impaired", "liver", "brain", "heart", "health risk"
-    ],
-    synonyms: {
-      "drunk": "intoxicated", "drinking": "alcohol", "bac": "blood alcohol",
-      "fas": "fetal alcohol syndrome", "liver damage": "cirrhosis"
-    },
-    reasoning: [
-      "because", "which can lead to", "as a result", "therefore",
-      "this affects", "this causes", "for example", "since", "which impairs"
-    ],
-    questionConcepts: {
-      "reasons": ["social", "peer pressure", "stress", "curiosity", "advertising", "celebration"],
-      "health risk": ["liver", "brain", "cirrhosis", "addiction", "alcohol poisoning",
-                      "fetal alcohol syndrome", "impaired judgment", "reaction time"]
-    }
-  },
-
-  "Nervous System": {
-    vocabulary: [
-      "nervous system", "central nervous system", "peripheral nervous system",
-      "neuron", "somatic", "autonomic", "brain", "spinal cord",
-      "signal", "response", "reflex", "stimulus", "stimuli",
-      "traumatic brain injury", "detect", "process", "react",
-      "sense receptor", "sensory", "motor", "synapse", "nerve"
-    ],
-    synonyms: {
-      "cns": "central nervous system", "pns": "peripheral nervous system",
-      "nerve cell": "neuron", "tbi": "traumatic brain injury"
-    },
-    reasoning: [
-      "first", "next", "then", "after that", "because", "which sends",
-      "this triggers", "so that", "which causes", "in order to", "finally"
-    ],
-    questionConcepts: {
-      "stimulus response": ["detect", "process", "respond", "reflex", "signal",
-                            "neuron", "brain", "spinal cord", "sense receptor", "motor"]
-    }
-  },
-
-  "Mental Health": {
-    vocabulary: [
-      "mental health", "emotional health", "resilience", "empathy", "self-actualization",
-      "self-concept", "self-esteem", "anxiety", "panic", "depression", "stress", "stressor",
-      "eustress", "distress", "adrenaline", "fight-or-flight", "coping", "defense mechanism",
-      "bipolar", "mood disorder", "phobia", "post-traumatic", "obsessive-compulsive",
-      "seasonal affective", "cyberbullying", "optimistic", "confidence",
-      "therapist", "psychiatrist", "psychologist", "treatment", "well-being",
-      "health triangle", "physical health", "social health", "emotion",
-      "fear", "positive", "negative", "disorder", "daily life"
-    ],
-    synonyms: {
-      "ptsd": "post-traumatic", "ocd": "obsessive-compulsive", "sad": "seasonal affective",
-      "fight or flight": "fight-or-flight", "self esteem": "self-esteem"
-    },
-    reasoning: [
-      "because", "this affects", "which can lead to", "for example",
-      "as a result", "this causes", "when", "if", "however", "on the other hand"
-    ],
-    questionConcepts: {
-      "self-esteem": ["confidence", "well-being", "mental health", "social", "negative", "positive"],
-      "fear": ["positive", "negative", "helpful", "unhealthy", "emotion", "response", "protect"],
-      "stress": ["physical health", "mental health", "social health", "health triangle",
-                 "stressor", "distress", "eustress", "coping", "adrenaline"],
-      "disorder": ["treatment", "daily life", "cause", "support", "therapist",
-                   "psychiatrist", "psychologist", "well-being"]
-    }
-  },
-
-  Nutrition: {
-    vocabulary: [
-      "nutrient", "nutrition", "carbohydrate", "fiber", "protein", "fat",
-      "saturated fat", "unsaturated fat", "trans fat", "cholesterol", "hdl", "ldl",
-      "vitamin", "mineral", "digestion", "sodium", "food allergy", "foodborne",
-      "pasteurization", "calorie", "basal metabolic rate", "electrolyte",
-      "eating disorder", "anorexia", "bulimia", "binge eating", "body image",
-      "dietary supplement", "insulin", "diabetes", "ketosis",
-      "fad diet", "weight cycling", "balanced diet", "energy", "health",
-      "myplate", "nutrient-dense", "empty calorie", "food source"
-    ],
-    synonyms: {
-      "carbs": "carbohydrate", "sugar": "carbohydrate",
-      "bmr": "basal metabolic rate", "ldl": "low density", "hdl": "high density"
-    },
-    reasoning: [
-      "because", "for example", "this helps", "which means", "as a result",
-      "this provides", "which supports", "therefore", "such as", "this gives"
-    ],
-    questionConcepts: {
-      "vitamins minerals": ["source", "health", "balanced", "deficiency", "body function", "food"],
-      "carbohydrates": ["energy", "fiber", "simple", "complex", "blood sugar", "helpful", "harmful"],
-      "fats": ["saturated", "unsaturated", "trans", "cholesterol", "hdl", "ldl", "heart", "healthy"],
-      "protein": ["muscle", "repair", "amino acid", "too little", "too much", "body", "growth"],
-      "fad diet": ["short-term", "long-term", "risk", "weight cycling", "health", "extreme"],
-      "eating disorder": ["anorexia", "bulimia", "binge eating", "mental health",
-                          "physical health", "cause", "treatment", "recovery"]
-    }
-  },
-
-  Disease: {
-    vocabulary: [
-      "communicable", "infectious", "virus", "bacteria", "protozoa", "fungi",
-      "pathogen", "immune system", "immunity", "immunization", "inflammation",
-      "lymphatic", "lymphocyte", "antigen", "antibody", "vaccine", "t cell", "b cell",
-      "phagocyte", "contagious", "tuberculosis", "pneumonia", "hepatitis",
-      "sexually transmitted", "hiv", "aids", "opportunistic infection",
-      "noncommunicable", "cancer", "tumor", "malignant", "carcinogen",
-      "cardiovascular", "hypertension", "diabetes", "atherosclerosis",
-      "arteriosclerosis", "stroke", "heart attack", "asthma", "allergy", "allergen",
-      "prevention", "spread", "infection", "hygiene", "lifestyle", "risk factor",
-      "developing country", "access", "healthcare", "education", "treatment"
-    ],
-    synonyms: {
-      "germ": "pathogen", "bug": "pathogen", "white blood cell": "lymphocyte",
-      "t-cell": "t cell", "b-cell": "b cell",
-      "uv": "ultraviolet", "smoking": "carcinogen"
-    },
-    reasoning: [
-      "because", "as a result", "this prevents", "which can spread",
-      "this causes", "therefore", "for example", "which leads to", "since", "such as"
-    ],
-    questionConcepts: {
-      "immune response": ["t cell", "b cell", "antibody", "antigen", "phagocyte",
-                          "pathogen", "virus", "inflammation", "lymphocyte", "vaccine"],
-      "pathogens": ["bacteria", "fungi", "protozoa", "virus", "spread", "prevention", "hygiene"],
-      "hiv": ["developing country", "healthcare", "education", "treatment", "access", "prevention"],
-      "cancer": ["lifestyle", "carcinogen", "smoking", "uv", "diet", "risk", "prevention", "tumor"],
-      "heart disease": ["exercise", "diet", "smoking", "hypertension", "cholesterol",
-                        "atherosclerosis", "lifestyle", "prevention"]
-    }
-  },
-
-  "Endocrine System": {
-    vocabulary: [
-      "endocrine", "gland", "pituitary", "adrenal", "hypothalamus",
-      "hormone", "metabolism", "homeostasis", "reproduction",
-      "estrogen", "progesterone", "testosterone", "insulin", "blood sugar",
-      "growth", "stress", "balance", "regulate", "target organ",
-      "diabetes", "thyroid", "feedback", "chemical messenger", "imbalance"
-    ],
-    synonyms: {
-      "chemical messenger": "hormone", "blood sugar": "glucose",
-      "out of balance": "imbalance", "glands": "gland"
-    },
-    reasoning: [
-      "because", "this controls", "which helps", "as a result",
-      "this regulates", "which signals", "therefore", "in order to",
-      "when this fails", "if this does not work", "which causes"
-    ],
-    questionConcepts: {
-      "balance": ["growth", "metabolism", "stress", "homeostasis", "hormone",
-                  "gland", "regulate", "imbalance", "diabetes", "thyroid"]
-    }
-  }
-};
-
-function getScoringProfile(category, questionText) {
-  const base = CATEGORY_SCORING_PROFILES[category] || {
-    vocabulary: ["evidence", "reason", "example", "effect", "cause", "health", "system"],
-    reasoning: ["because", "for example", "therefore", "as a result"]
-  };
-
-  // Pull extra terms from the question itself (words 5+ chars)
-  const questionTerms = (questionText || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, " ")
-    .split(/\s+/)
-    .filter((term) => term.length >= 5)
-    .slice(0, 10);
-
-  // Find which concept cluster best matches this question
-  let bonusVocabulary = [];
-  if (base.questionConcepts) {
-    const qLower = (questionText || "").toLowerCase();
-    for (const [key, terms] of Object.entries(base.questionConcepts)) {
-      if (key.split(" ").some((k) => qLower.includes(k))) {
-        bonusVocabulary = [...bonusVocabulary, ...terms];
-      }
-    }
-  }
-
-  return {
-    vocabulary: Array.from(new Set([...base.vocabulary, ...bonusVocabulary, ...questionTerms])),
-    reasoning: Array.from(
-      new Set([...base.reasoning, "because", "for example", "therefore"])
-    ),
-    synonyms: base.synonyms || {}
-  };
-}
-
-function buildAssessment(transcript, studentName, category, questionText) {
-  const normalized = (transcript || "").trim();
-  const wordCount = normalized ? normalized.split(/\s+/).length : 0;
-  const lower = normalized.toLowerCase();
-
-  const profile = getScoringProfile(category, questionText);
-
-  // ── Reasoning detection ──
-  const evidenceSignals = [
-    ...profile.reasoning,
-    "for instance", "this shows", "since", "which means",
-    "in order to", "so that", "as a result", "this is because"
-  ];
-
-  const sentences = normalized
-    .split(/[.!?]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-
-  // Only count reasoning if the same sentence also contains a vocab/content word
-  // — prevents false positives like "I don't know because I wasn't listening"
-  let meaningfulReasoningHits = 0;
-  sentences.forEach((sentence) => {
-    const sLower = sentence.toLowerCase();
-    const hasReasoning = evidenceSignals.some((signal) => sLower.includes(signal));
-    const hasContent = profile.vocabulary.some((term) => sLower.includes(term));
-    if (hasReasoning && hasContent) {
-      meaningfulReasoningHits++;
-    }
-  });
-
-  // ── Vocabulary detection — including synonym expansion ──
-  const expandedTranscript = (() => {
-    let t = lower;
-    for (const [informal, formal] of Object.entries(profile.synonyms)) {
-      t = t.replace(new RegExp(`\\b${informal}\\b`, "g"), formal);
-    }
-    return t;
-  })();
-
-  const vocabularyUsed = profile.vocabulary.filter((term) =>
-    expandedTranscript.includes(term)
-  );
-  const uniqueVocabularyCount = new Set(vocabularyUsed).size;
-
-  // ── Thresholds ──
-  const sentenceCount = sentences.length;
-  const hasCompleteResponse = wordCount >= 35 && sentenceCount >= 2;
-  const hasDevelopingResponse = wordCount >= 18 && sentenceCount >= 1;
-  const hasStrongVocabulary = uniqueVocabularyCount >= 3;
-  const hasSomeVocabulary = uniqueVocabularyCount >= 1;
-  const hasStrongReasoning = meaningfulReasoningHits >= 2;
-  const hasSomeReasoning = meaningfulReasoningHits >= 1;
-
-  // ── Score ──
-  let score = 1;
-  if (hasDevelopingResponse && hasSomeVocabulary && hasSomeReasoning) score = 2;
-  if (hasCompleteResponse && hasStrongVocabulary && hasStrongReasoning) score = 3;
-
-  // ── Feedback strings ──
-  const strengths = [];
-  const nextSteps = [];
-
-  if (hasCompleteResponse) {
-    strengths.push("your response was complete enough for your teacher to follow your thinking");
-  } else if (hasDevelopingResponse) {
-    strengths.push("you answered part of the question in a clear way");
-  } else {
-    nextSteps.push("say more so your answer feels complete instead of very short");
-  }
-
-  if (hasStrongVocabulary) {
-    strengths.push("you used lesson vocabulary accurately");
-  } else if (hasSomeVocabulary) {
-    strengths.push("you started to connect your answer to lesson vocabulary");
-    nextSteps.push("use more precise lesson words");
-  } else {
-    nextSteps.push("include academic vocabulary from the lesson");
-  }
-
-  if (hasStrongReasoning) {
-    strengths.push("you supported your idea with clear evidence or cause-and-effect reasoning");
-  } else if (hasSomeReasoning) {
-    strengths.push("you gave some reasoning to support your answer");
-    nextSteps.push("explain your evidence more clearly");
-  } else {
-    nextSteps.push("add evidence and explain why your answer makes sense");
-  }
-
-  const rubricLevel = getRubricLevel(score);
-  const strengthsLine =
-    strengths.length > 0
-      ? `Strengths observed: ${strengths.join("; ")}.`
-      : "Strengths observed: none clearly demonstrated yet.";
-  const nextStepsLine =
-    nextSteps.length > 0
-      ? `Next steps: ${nextSteps.join("; ")}.`
-      : "Next steps: maintain this level by continuing to use precise vocabulary and explicit evidence.";
-  const evidenceLine = `Evidence summary: ${wordCount} words, ${sentenceCount} complete sentence${sentenceCount === 1 ? "" : "s"}, ${uniqueVocabularyCount} lesson vocabulary term${uniqueVocabularyCount === 1 ? "" : "s"}, and ${meaningfulReasoningHits} reasoning signal${meaningfulReasoningHits === 1 ? "" : "s"}.`;
-  const rubricLine = rubricLevel
-    ? `Rubric alignment: Level ${score} because ${rubricLevel.criteria[0].charAt(0).toLowerCase()}${rubricLevel.criteria[0].slice(1)}.`
-    : "";
-
-  return {
-    score,
-    feedback: `Score ${score}/3. ${strengthsLine} ${nextStepsLine}`,
-    analysis: `${studentName || "The student"} received this score for ${category || "the lesson question"}. ${evidenceLine} ${rubricLine}`.trim(),
-    vocabularyUsed
-  };
-}
 
 const RECOGNITION_LANGUAGE_MAP = {
   en: "en-US", es: "es-ES", pt: "pt-BR", fr: "fr-FR", ht: "ht-HT",
@@ -508,9 +117,7 @@ export default function ThinkOutLoudRecorder({
     retryWindowEndsAt === null ? retryWindowMs : Math.max(0, retryWindowEndsAt - retryNow);
   const retryWindowLabel = `${Math.floor(retryWindowTimeLeft / 60000)}:${Math.floor(
     (retryWindowTimeLeft % 60000) / 1000
-  )
-    .toString()
-    .padStart(2, "0")}`;
+  ).toString().padStart(2, "0")}`;
   const canAttemptAgain =
     attempts.length < maxAttempts && (attempts.length === 0 || retryWindowActive);
 
@@ -887,7 +494,6 @@ export default function ThinkOutLoudRecorder({
             border: "1px solid #e5e7eb"
           }}
         >
-          {/* ✅ FIX 2: replaced `forcedage` and all `forcedLanguage` with `studentLanguage` */}
           <T text={`Attempts: ${attempts.length}`} lang={studentLanguage} />
           <T text={`Best score: ${bestAttempt?.score ?? "-"} / 3`} lang={studentLanguage} />
           <T text={`Remaining: ${attemptsRemaining}`} lang={studentLanguage} />
@@ -904,13 +510,7 @@ export default function ThinkOutLoudRecorder({
           <T text="Local recording:" lang={studentLanguage} />{" "}
           {Math.floor(timer / 60)}:{(timer % 60).toString().padStart(2, "0")}
           {" "}/ 0:45
-          <div style={{
-            marginTop: 6,
-            height: 6,
-            borderRadius: 3,
-            background: "#e9ecef",
-            overflow: "hidden"
-          }}>
+          <div style={{ marginTop: 6, height: 6, borderRadius: 3, background: "#e9ecef", overflow: "hidden" }}>
             <div style={{
               height: "100%",
               width: `${Math.min((timer / MAX_RECORDING_TIME) * 100, 100)}%`,
@@ -931,15 +531,11 @@ export default function ThinkOutLoudRecorder({
       <div ref={waveformRef} />
 
       {/* ── Start button ── */}
-      {!recording &&
-        !audioURL &&
-        phase !== "processing" &&
-        phase !== "feedback" &&
-        canAttemptAgain && (
-          <button onClick={startRecording}>
-            <T text="Start" lang={studentLanguage} />
-          </button>
-        )}
+      {!recording && !audioURL && phase !== "processing" && phase !== "feedback" && canAttemptAgain && (
+        <button onClick={startRecording}>
+          <T text="Start" lang={studentLanguage} />
+        </button>
+      )}
 
       {/* ── Stop button ── */}
       {recording && (
@@ -980,10 +576,7 @@ export default function ThinkOutLoudRecorder({
 
       {/* ── Processing state ── */}
       {phase === "processing" && (
-        <T
-          text="Processing your response and preparing feedback..."
-          lang={studentLanguage}
-        />
+        <T text="Processing your response and preparing feedback..." lang={studentLanguage} />
       )}
 
       {/* ── Feedback panel ── */}
@@ -999,31 +592,22 @@ export default function ThinkOutLoudRecorder({
                 : "#f8f9fa",
             position: "relative",
             overflow: "hidden",
-            animation:
-              responseData.score === 3 ? "tol-celebration-pop 320ms ease-out" : "none"
+            animation: responseData.score === 3 ? "tol-celebration-pop 320ms ease-out" : "none"
           }}
         >
           {showCelebration && responseData.score === 3 && (
             <>
               <div
                 style={{
-                  position: "absolute",
-                  inset: 0,
-                  pointerEvents: "none",
-                  background:
-                    "radial-gradient(circle at top, rgba(255, 236, 153, 0.7), transparent 52%), radial-gradient(circle at bottom right, rgba(255, 169, 77, 0.18), transparent 36%)"
+                  position: "absolute", inset: 0, pointerEvents: "none",
+                  background: "radial-gradient(circle at top, rgba(255, 236, 153, 0.7), transparent 52%), radial-gradient(circle at bottom right, rgba(255, 169, 77, 0.18), transparent 36%)"
                 }}
               />
               <div
                 style={{
-                  position: "absolute",
-                  top: -120,
-                  right: -80,
-                  width: 260,
-                  height: 260,
+                  position: "absolute", top: -120, right: -80, width: 260, height: 260,
                   borderRadius: "50%",
-                  background:
-                    "radial-gradient(circle, rgba(255,255,255,0.55), transparent 62%)",
+                  background: "radial-gradient(circle, rgba(255,255,255,0.55), transparent 62%)",
                   pointerEvents: "none"
                 }}
               />
@@ -1034,9 +618,7 @@ export default function ThinkOutLoudRecorder({
                     position: "absolute",
                     top: burstIndex === 0 ? "22%" : burstIndex === 1 ? "16%" : "24%",
                     left: burstIndex === 0 ? "16%" : burstIndex === 1 ? "50%" : "84%",
-                    width: 12,
-                    height: 12,
-                    pointerEvents: "none"
+                    width: 12, height: 12, pointerEvents: "none"
                   }}
                 >
                   {Array.from({ length: 12 }).map((_, particleIndex) => {
@@ -1049,11 +631,7 @@ export default function ThinkOutLoudRecorder({
                         style={{
                           "--dx": `${Math.cos(angle) * distance}px`,
                           "--dy": `${Math.sin(angle) * distance}px`,
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          width: 8,
-                          height: 8,
+                          position: "absolute", top: 0, left: 0, width: 8, height: 8,
                           borderRadius: "50%",
                           background: colors[(burstIndex + particleIndex) % colors.length],
                           boxShadow: "0 0 14px rgba(255, 212, 59, 0.75)",
@@ -1072,13 +650,9 @@ export default function ThinkOutLoudRecorder({
                     top: 54 + index * 30,
                     left: index % 2 === 0 ? 24 : "auto",
                     right: index % 2 === 1 ? 24 : "auto",
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    background: "rgba(255,255,255,0.7)",
-                    color: "#7a4e00",
-                    fontWeight: 700,
-                    fontSize: 12,
-                    letterSpacing: 0.3,
+                    padding: "4px 10px", borderRadius: 999,
+                    background: "rgba(255,255,255,0.7)", color: "#7a4e00",
+                    fontWeight: 700, fontSize: 12, letterSpacing: 0.3,
                     pointerEvents: "none",
                     animation: `tol-ribbon-float 1300ms ease-out ${index * 110}ms forwards`
                   }}
@@ -1088,15 +662,9 @@ export default function ThinkOutLoudRecorder({
               ))}
               <div
                 style={{
-                  position: "absolute",
-                  top: 16,
-                  right: 16,
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  background: "#2f9e44",
-                  color: "white",
-                  fontWeight: 700,
-                  letterSpacing: 0.3
+                  position: "absolute", top: 16, right: 16,
+                  padding: "6px 10px", borderRadius: 999,
+                  background: "#2f9e44", color: "white", fontWeight: 700, letterSpacing: 0.3
                 }}
               >
                 Perfect Score
@@ -1104,80 +672,55 @@ export default function ThinkOutLoudRecorder({
             </>
           )}
 
-          {/* ✅ FIX 3: was hardcoded lang="es" — now uses studentLanguage prop */}
-          <h2>
-            <T text="Feedback" lang={studentLanguage} />
-          </h2>
+          <h2><T text="Feedback" lang={studentLanguage} /></h2>
 
           <div style={{ marginBottom: 12 }}>
-            <T
-              text={`Attempt ${responseData.attemptNumber || attempts.length}`}
-              lang={studentLanguage}
-            />
+            <T text={`Attempt ${responseData.attemptNumber || attempts.length}`} lang={studentLanguage} />
           </div>
 
           {responseData.score === 3 && (
             <div
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 10,
-                marginBottom: 14,
-                padding: "10px 16px",
-                borderRadius: 999,
+                display: "inline-flex", alignItems: "center", gap: 10,
+                marginBottom: 14, padding: "10px 16px", borderRadius: 999,
                 background: "rgba(255,255,255,0.72)",
                 border: "1px solid rgba(255, 212, 59, 0.75)",
-                color: "#7a4e00",
-                fontWeight: 800,
+                color: "#7a4e00", fontWeight: 800,
                 animation: "tol-score-glow 1.8s ease-in-out infinite"
               }}
             >
               <span style={{ fontSize: 20 }}>3 / 3</span>
-              <span>
-                <T text="You nailed it." lang={studentLanguage} />
-              </span>
+              <span><T text="You nailed it." lang={studentLanguage} /></span>
             </div>
           )}
 
           {responseData.score !== 3 && <h3>{responseData.score} / 3</h3>}
 
-          <ScoreBreakdown
-            score={responseData.score}
-            studentLanguage={studentLanguage}
-          />
+          <ScoreBreakdown score={responseData.score} studentLanguage={studentLanguage} />
 
           <div style={{ marginTop: 20 }}>
-            <h3>
-              <T text="Feedback" lang={studentLanguage} />
-            </h3>
+            <h3><T text="Feedback" lang={studentLanguage} /></h3>
             <p>{responseData.feedback}</p>
           </div>
 
           {responseData.analysis && (
             <div style={{ marginTop: 20 }}>
-              <h3>
-                <T text="Why You Received This Score" lang={studentLanguage} />
-              </h3>
+              <h3><T text="Why You Received This Score" lang={studentLanguage} /></h3>
               <p>{responseData.analysis}</p>
             </div>
           )}
 
           {responseData.vocabularyUsed?.length > 0 && (
             <div style={{ marginTop: 20 }}>
-              <h3>
-                <T text="Vocabulary Used" lang={studentLanguage} />
-              </h3>
+              <h3><T text="Vocabulary Used" lang={studentLanguage} /></h3>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {responseData.vocabularyUsed.map((word) => (
                   <span
                     key={word}
                     style={{
-                      padding: "6px 10px",
-                      borderRadius: 999,
-                      background: "#e7f5ff",
-                      color: "#1864ab",
-                      fontWeight: 600,
-                      fontSize: 14
+                      padding: "6px 10px", borderRadius: 999,
+                      background: "#e7f5ff", color: "#1864ab",
+                      fontWeight: 600, fontSize: 14
                     }}
                   >
                     {word}
@@ -1189,29 +732,19 @@ export default function ThinkOutLoudRecorder({
 
           {audioURL && (
             <div style={{ marginTop: 20 }}>
-              <h3>
-                <T text="Playback" lang={studentLanguage} />
-              </h3>
+              <h3><T text="Playback" lang={studentLanguage} /></h3>
               <audio controls src={audioURL} style={{ width: "100%" }} />
             </div>
           )}
 
           {transcript && (
             <div style={{ marginTop: 20 }}>
-              <h3>
-                <T text="Your Response" lang={studentLanguage} />
-              </h3>
-              <div
-                dangerouslySetInnerHTML={{ __html: highlightReasoning(transcript) }}
-              />
+              <h3><T text="Your Response" lang={studentLanguage} /></h3>
+              <div dangerouslySetInnerHTML={{ __html: highlightReasoning(transcript) }} />
             </div>
           )}
 
-          <button
-            onClick={resetForNextAttempt}
-            style={{ marginTop: 20 }}
-            disabled={!canAttemptAgain}
-          >
+          <button onClick={resetForNextAttempt} style={{ marginTop: 20 }} disabled={!canAttemptAgain}>
             {!retryWindowActive ? (
               <T text="Revision Window Closed" lang={studentLanguage} />
             ) : attempts.length >= maxAttempts ? (
@@ -1226,10 +759,7 @@ export default function ThinkOutLoudRecorder({
       {/* ── Retry window expired notice ── */}
       {!retryWindowActive && attempts.length > 0 && phase !== "feedback" && (
         <div style={{ marginTop: 16, color: "#555" }}>
-          <T
-            text="Your 15-minute revision window has ended."
-            lang={studentLanguage}
-          />
+          <T text="Your 15-minute revision window has ended." lang={studentLanguage} />
         </div>
       )}
 
