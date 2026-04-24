@@ -955,16 +955,16 @@ export default function TeacherDashboard({ classId }) {
         </div>
       )}
 
-      {activeTab === "analytics" && (
-        <div>
-          <h3>Analytics and Insights</h3>
-          <AnalyticsSummary analytics={analytics} />
-          <ReasoningAnalyticsPanel classId={classId} sessionId={sessionId} />
-          <ReasoningHeatmapPanel responses={responses} />
-          <DominantReasoningThemes analytics={analytics} />
-          <ReasoningGapDetector analytics={analytics} />
-        </div>
-      )}
+     {activeTab === "analytics" && (
+  <div>
+    <h3>Analytics and Insights</h3>
+    <AnalyticsSummary analytics={analytics} responses={responses} />
+    <ReasoningAnalyticsPanel responses={responses} />
+    <ReasoningHeatmapPanel responses={responses} />
+    <DominantReasoningThemes analytics={analytics} responses={responses} />
+    <ReasoningGapDetector analytics={analytics} responses={responses} />
+  </div>
+)}
 
       {activeTab === "tools" && (
         <div>
