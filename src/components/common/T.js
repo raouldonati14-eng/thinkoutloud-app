@@ -15,7 +15,15 @@ export default function T({ text, lang = "en", context = "student" }) {
     let mounted = true;
 
     async function run() {
-      if (!text || lang === "en") return;
+      if (!text) {
+        if (mounted) setTranslated(text);
+        return;
+      }
+
+      if (lang === "en") {
+        if (mounted) setTranslated(text);
+        return;
+      }
 
       const key = `${lang}:${text}`;
 

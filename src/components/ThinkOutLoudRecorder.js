@@ -9,9 +9,12 @@ import {
   collection,
   deleteDoc,
   onSnapshot,
-  serverTimestamp
+  query,
+  serverTimestamp,
+  where
 } from "firebase/firestore";
 import { highlightReasoning } from "../utils/highlightReasoning";
+import { logClientEvent } from "../utils/logEvent";
 import { getRubricLevel } from "./teacher/ScoringRubricPanel";
 import T from "./common/T";
 import { useBatchTranslate } from "../hooks/useBatchTranslate";
@@ -69,6 +72,45 @@ const RECOGNITION_LANGUAGE_MAP = {
   ja: "ja-JP"
 };
 
+const primaryButtonStyle = {
+  minWidth: 180,
+  minHeight: 60,
+  padding: "16px 24px",
+  borderRadius: 12,
+  border: "none",
+  background: "#228be6",
+  color: "white",
+  fontWeight: 800,
+  fontSize: 22,
+  cursor: "pointer",
+  boxShadow: "0 12px 24px rgba(34, 139, 230, 0.22)"
+};
+
+const secondaryButtonStyle = {
+  marginTop: 12,
+  minHeight: 44,
+  padding: "10px 16px",
+  borderRadius: 10,
+  border: "1px solid #ced4da",
+  background: "#ffffff",
+  color: "#212529",
+  fontWeight: 700,
+  cursor: "pointer"
+};
+
+const toMillis = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (value?.toMillis && typeof value.toMillis === "function") {
+    const millis = value.toMillis();
+    return Number.isFinite(millis) ? millis : null;
+  }
+
+  return null;
+};
+
 export default function ThinkOutLoudRecorder({
   student,
   questionId,
@@ -79,6 +121,8 @@ export default function ThinkOutLoudRecorder({
   teacherLanguage = "en",
   studentLanguage = "en",
   writtenResponse = "",
+  responseWindowEndsAt = null,
+  storageKeyBase = null,
   onRecordingChange,
   onFinish
 }) {
@@ -107,14 +151,23 @@ export default function ThinkOutLoudRecorder({
   const recognitionRef = useRef(null);
   const processingTimeoutRef = useRef(null);
   const celebratedResponseRef = useRef(null);
+  const recorderStorageKey = storageKeyBase ? `${storageKeyBase}:recorder` : null;
+  const supportsSpeechRecognition = "webkitSpeechRecognition" in window;
+  const supportsAudioRecording =
+    !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
 
   const maxAttempts = 3;
   const MAX_RECORDING_TIME = 45;
   const retryWindowMs = 15 * 60 * 1000;
+  const sessionRetryWindowEndsAt =
+    toMillis(responseWindowEndsAt) ?? retryWindowEndsAt;
   const attemptsRemaining = Math.max(0, maxAttempts - attempts.length);
-  const retryWindowActive = retryWindowEndsAt === null || retryWindowEndsAt > retryNow;
+  const retryWindowActive =
+    sessionRetryWindowEndsAt === null || sessionRetryWindowEndsAt > retryNow;
   const retryWindowTimeLeft =
-    retryWindowEndsAt === null ? retryWindowMs : Math.max(0, retryWindowEndsAt - retryNow);
+    sessionRetryWindowEndsAt === null
+      ? retryWindowMs
+      : Math.max(0, sessionRetryWindowEndsAt - retryNow);
   const retryWindowLabel = `${Math.floor(retryWindowTimeLeft / 60000)}:${Math.floor(
     (retryWindowTimeLeft % 60000) / 1000
   ).toString().padStart(2, "0")}`;
@@ -135,6 +188,131 @@ export default function ThinkOutLoudRecorder({
     });
     return () => wavesurferRef.current?.destroy();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (audioURL) {
+        URL.revokeObjectURL(audioURL);
+      }
+    };
+  }, [audioURL]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !recorderStorageKey) return;
+
+    const savedState = window.localStorage.getItem(recorderStorageKey);
+    if (!savedState) return;
+
+    try {
+      const parsed = JSON.parse(savedState);
+      setAttempts(Array.isArray(parsed.attempts) ? parsed.attempts : []);
+      setRetryWindowEndsAt(
+        Number.isFinite(parsed.retryWindowEndsAt) ? parsed.retryWindowEndsAt : null
+      );
+      setActiveResponseId(parsed.activeResponseId || null);
+      setTranscript(parsed.transcript || "");
+      setPhase(parsed.phase || "recording");
+      setResponseData(parsed.responseData || null);
+    } catch (error) {
+      console.error("Failed to restore recorder state", error);
+    }
+  }, [recorderStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !recorderStorageKey) return;
+
+    window.localStorage.setItem(
+      recorderStorageKey,
+      JSON.stringify({
+        attempts,
+        retryWindowEndsAt,
+        activeResponseId,
+        transcript,
+        phase,
+        responseData
+      })
+    );
+  }, [
+    activeResponseId,
+    attempts,
+    phase,
+    recorderStorageKey,
+    responseData,
+    retryWindowEndsAt,
+    transcript
+  ]);
+
+  useEffect(() => {
+    if (!classId || !sessionId || !student) return;
+
+    const responsesQuery = query(
+      collection(db, "responses"),
+      where("classId", "==", classId),
+      where("sessionId", "==", sessionId)
+    );
+
+    const unsubscribe = onSnapshot(responsesQuery, (snapshot) => {
+      const docs = snapshot.docs
+        .map((responseDoc) => ({
+          id: responseDoc.id,
+          ...responseDoc.data()
+        }))
+        .filter((responseDoc) => responseDoc.studentId === student);
+
+      const completeAttempts = docs
+        .filter((attempt) => attempt.status === "complete")
+        .map((attempt, index) => ({
+          id: attempt.id,
+          score: attempt.score,
+          feedback: attempt.feedback,
+          analysis: attempt.analysis,
+          attemptNumber: attempt.attemptNumber || index + 1
+        }))
+        .sort((a, b) => (a.attemptNumber || 0) - (b.attemptNumber || 0));
+
+      setAttempts(completeAttempts);
+
+      const latest = docs.sort((a, b) => {
+        const aTime =
+          toMillis(a.completedAt) ??
+          toMillis(a.createdAt) ??
+          0;
+        const bTime =
+          toMillis(b.completedAt) ??
+          toMillis(b.createdAt) ??
+          0;
+        return bTime - aTime;
+      })[0];
+
+      if (!latest || recording || audioURL) return;
+
+      if (
+        phase === "recording" &&
+        activeResponseId === null &&
+        completeAttempts.length > 0
+      ) {
+        return;
+      }
+
+      if (latest.status === "processing") {
+        setActiveResponseId(latest.id);
+        setPhase("processing");
+        setStatusMessage("Analyzing your response...");
+        setIsSubmitting(true);
+      }
+
+      if (latest.status === "complete") {
+        setActiveResponseId(latest.id);
+        setResponseData(latest);
+        setPhase("feedback");
+        setStatusMessage("Feedback ready.");
+        setIsSubmitting(false);
+        setError("");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [activeResponseId, audioURL, classId, phase, recording, sessionId, student]);
 
   useEffect(() => {
     if (!activeResponseId) return;
@@ -191,6 +369,12 @@ export default function ThinkOutLoudRecorder({
   }, [attempts.length, retryWindowEndsAt]);
 
   useEffect(() => {
+    const explicitWindowEnd = toMillis(responseWindowEndsAt);
+    if (!explicitWindowEnd) return;
+    setRetryWindowEndsAt(explicitWindowEnd);
+  }, [responseWindowEndsAt]);
+
+  useEffect(() => {
     if (
       phase !== "feedback" ||
       responseData?.status !== "complete" ||
@@ -238,6 +422,9 @@ export default function ThinkOutLoudRecorder({
     }
     responseIdRef.current = null;
     setActiveResponseId(null);
+    if (audioURL) {
+      URL.revokeObjectURL(audioURL);
+    }
     setAudioURL(null);
     setTranscript("");
     setResponseData(null);
@@ -250,6 +437,12 @@ export default function ThinkOutLoudRecorder({
 
   const startRecording = async () => {
     if (!canAttemptAgain) {
+      logClientEvent("student_attempt_blocked", {
+        classId,
+        sessionId,
+        attempts: attempts.length,
+        retryWindowActive
+      });
       setError(
         attempts.length >= maxAttempts
           ? "You have reached the maximum of 3 attempts."
@@ -268,12 +461,23 @@ export default function ThinkOutLoudRecorder({
       return;
     }
 
+    if (!supportsAudioRecording) {
+      logClientEvent("student_recording_unavailable", {
+        classId,
+        sessionId,
+        student
+      });
+      setError("This browser cannot record audio. Try Chrome on the classroom device.");
+      setStatusMessage("Audio recording is unavailable.");
+      return;
+    }
+
     if (!responseIdRef.current) {
       responseIdRef.current = doc(collection(db, "responses")).id;
       setActiveResponseId(responseIdRef.current);
     }
 
-    if ("webkitSpeechRecognition" in window) {
+    if (supportsSpeechRecognition) {
       const recognition = new window.webkitSpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
@@ -285,60 +489,88 @@ export default function ThinkOutLoudRecorder({
         }
         setTranscript(text);
       };
+      recognition.onerror = () => {
+        setStatusMessage("Recording audio. Live transcript is unavailable right now.");
+      };
       recognition.start();
       recognitionRef.current = recognition;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
-    });
-    const recorder = new MediaRecorder(stream);
-    mediaRecorderRef.current = recorder;
-    audioChunksRef.current = [];
-
-    setTimer(0);
-    setStatusMessage("Recording...");
-    setPhase("recording");
-    setResponseData(null);
-    setActiveResponseId(responseIdRef.current);
-    setAudioURL(null);
-    setTranscript("");
-    setIsSubmitting(false);
-    setError("");
-
-    recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
-
-    recorder.onstop = () => {
-      clearInterval(intervalRef.current);
-      const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-      const url = URL.createObjectURL(blob);
-      setAudioURL(url);
-      setRecording(false);
-      onRecordingChange?.(false);
-      setPhase("ready");
-      setStatusMessage("Recording ready to submit.");
-      wavesurferRef.current?.load(url);
-      recognitionRef.current?.stop();
-    };
-
-    recorder.start();
-    setRecording(true);
-    onRecordingChange?.(true);
-    intervalRef.current = setInterval(() => {
-      setTimer((prev) => prev + 1);
-    }, 1000);
-
     try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      setTimer(0);
+      setStatusMessage(
+        supportsSpeechRecognition
+          ? "Recording..."
+          : "Recording started. Transcription is not available in this browser."
+      );
+      setPhase("recording");
+      setResponseData(null);
+      setActiveResponseId(responseIdRef.current);
+      if (audioURL) {
+        URL.revokeObjectURL(audioURL);
+      }
+      setAudioURL(null);
+      setTranscript("");
+      setIsSubmitting(false);
+      setError("");
+
+      recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
+
+      recorder.onstop = () => {
+        clearInterval(intervalRef.current);
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        setAudioURL(url);
+        setRecording(false);
+        onRecordingChange?.(false);
+        setPhase("ready");
+        setStatusMessage("Recording ready to submit.");
+        wavesurferRef.current?.load(url);
+        recognitionRef.current?.stop();
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      recorder.start();
+      setRecording(true);
+      onRecordingChange?.(true);
+      intervalRef.current = setInterval(() => {
+        setTimer((prev) => prev + 1);
+      }, 1000);
+
       await setDoc(
         doc(db, "classes", classId, "sessions", sessionId, "recording", student),
         { student, startedAt: Date.now() }
       );
+      logClientEvent("student_recording_started", {
+        classId,
+        sessionId,
+        student
+      });
     } catch (err) {
       console.error("Recording start error:", err);
+      recognitionRef.current?.stop();
+      setRecording(false);
+      onRecordingChange?.(false);
+      setPhase("recording");
+      setError("We could not access the microphone. Check browser permissions and try again.");
+      setStatusMessage("Microphone access failed.");
+      logClientEvent("student_recording_start_failed", {
+        classId,
+        sessionId,
+        student,
+        message: err?.message || "unknown"
+      });
     }
   };
 
@@ -349,6 +581,12 @@ export default function ThinkOutLoudRecorder({
       await deleteDoc(
         doc(db, "classes", classId, "sessions", sessionId, "recording", student)
       );
+      logClientEvent("student_recording_stopped", {
+        classId,
+        sessionId,
+        student,
+        timer
+      });
     } catch (err) {
       console.error("Recording cleanup error:", err);
     }
@@ -401,6 +639,12 @@ export default function ThinkOutLoudRecorder({
         createdAt: serverTimestamp(),
         status: "processing"
       });
+      logClientEvent("student_response_saved_for_scoring", {
+        classId,
+        sessionId,
+        student,
+        responseId
+      });
 
       setPhase("processing");
       setStatusMessage("Response submitted. Preparing feedback...");
@@ -408,9 +652,14 @@ export default function ThinkOutLoudRecorder({
       if (processingTimeoutRef.current) clearTimeout(processingTimeoutRef.current);
 
       processingTimeoutRef.current = setTimeout(() => {
-        setIsSubmitting(false);
-        setError("Feedback is taking longer than expected. Please try submitting again.");
-        setStatusMessage("Processing is delayed.");
+        setError("Your response is saved. Feedback is taking longer than expected, but it is still processing.");
+        setStatusMessage("Processing is delayed, but your response was saved.");
+        logClientEvent("student_scoring_delayed", {
+          classId,
+          sessionId,
+          student,
+          responseId
+        });
       }, 15000);
 
       // ✅ AI-powered scoring via Firebase Function
@@ -427,7 +676,15 @@ export default function ThinkOutLoudRecorder({
         })
       });
 
+      if (!scoreRes.ok) {
+        throw new Error(`Scoring request failed with status ${scoreRes.status}`);
+      }
+
       const assessment = await scoreRes.json();
+
+      if (typeof assessment?.score !== "number") {
+        throw new Error("Scoring response was incomplete");
+      }
 
       setTimeout(async () => {
         try {
@@ -439,6 +696,13 @@ export default function ThinkOutLoudRecorder({
             vocabularyUsed: assessment.vocabularyUsed || [],
             completedAt: serverTimestamp()
           });
+          logClientEvent("student_response_scored", {
+            classId,
+            sessionId,
+            student,
+            responseId,
+            score: assessment.score
+          });
         } catch (updateError) {
           console.error("ASSESSMENT ERROR", updateError);
           if (processingTimeoutRef.current) {
@@ -448,14 +712,27 @@ export default function ThinkOutLoudRecorder({
           setIsSubmitting(false);
           setError("We could not generate feedback for this response.");
           setStatusMessage("Feedback generation failed.");
+          logClientEvent("student_feedback_write_failed", {
+            classId,
+            sessionId,
+            student,
+            responseId,
+            message: updateError?.message || "unknown"
+          });
         }
       }, 1500);
     } catch (err) {
       console.error("SUBMIT ERROR", err);
-      setError("Submission failed");
+      setError("We could not finish submitting this response. Your notes are still saved, so you can try again.");
       setStatusMessage("Submission failed.");
       setIsSubmitting(false);
       setPhase("ready");
+      logClientEvent("student_response_submit_failed", {
+        classId,
+        sessionId,
+        student,
+        message: err?.message || "unknown"
+      });
     }
   };
 
@@ -541,7 +818,7 @@ export default function ThinkOutLoudRecorder({
 
       {/* ── Start button ── */}
       {!recording && !audioURL && phase !== "processing" && phase !== "feedback" && canAttemptAgain && (
-        <button onClick={startRecording}>
+        <button onClick={startRecording} style={primaryButtonStyle}>
           <T text="Start" lang={studentLanguage} />
         </button>
       )}
@@ -557,7 +834,11 @@ export default function ThinkOutLoudRecorder({
       {recording && timer >= MAX_RECORDING_TIME && (
         <button
           onClick={stopRecording}
-          style={{ background: "#2f9e44", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", fontWeight: "bold", cursor: "pointer" }}
+          style={{
+            ...primaryButtonStyle,
+            background: "#2f9e44",
+            boxShadow: "0 12px 24px rgba(47, 158, 68, 0.22)"
+          }}
         >
           <T text="Stop & Submit" lang={studentLanguage} />
         </button>
@@ -596,6 +877,21 @@ export default function ThinkOutLoudRecorder({
       {/* ── Processing state ── */}
       {phase === "processing" && (
         <T text="Processing your response and preparing feedback..." lang={studentLanguage} />
+      )}
+
+      {!supportsSpeechRecognition && !recording && phase !== "feedback" && (
+        <div style={{ marginTop: 12, color: "#555" }}>
+          <T
+            text="This browser can record audio, but live transcript support is limited. You can still submit your recording."
+            lang={studentLanguage}
+          />
+        </div>
+      )}
+
+      {error && phase !== "feedback" && (
+        <button onClick={resetForNextAttempt} style={secondaryButtonStyle}>
+          <T text="Reset and Try Again" lang={studentLanguage} />
+        </button>
       )}
 
       {/* ── Feedback panel ── */}

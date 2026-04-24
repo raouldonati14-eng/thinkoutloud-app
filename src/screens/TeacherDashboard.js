@@ -7,7 +7,6 @@ import {
   onSnapshot,
   query,
   setDoc,
-  updateDoc,
   where,
   serverTimestamp
 } from "firebase/firestore";
@@ -18,6 +17,13 @@ import { useRecordingState } from "../utils/useRecordingState";
 import { buildQuestionPrompts } from "../utils/questionPrompts";
 import { translateText } from "../utils/translate";
 import { resolveQuestionIdentity } from "../utils/questionIdentity";
+import {
+  buildCloseQuestionUpdate,
+  buildPhaseUpdate,
+  buildReopenSessionUpdate,
+  getSessionStatusSummary
+} from "../utils/sessionState";
+import { logClientEvent } from "../utils/logEvent";
 
 import SubmissionProgressPanel from "../components/teacher/SubmissionProgressPanel";
 import RecordingTickerPanel from "../components/teacher/RecordingTickerPanel";
@@ -52,8 +58,6 @@ const SUPPORTED_LANGUAGES = {
   it: "Italian"
 };
 
-const DEFAULT_RECORDING_DURATION_MS = 60000;
-
 export default function TeacherDashboard({ classId }) {
   const navigate = useNavigate();
   const [classData, setClassData] = useState(null);
@@ -78,6 +82,7 @@ export default function TeacherDashboard({ classId }) {
   const { recordingState } = useRecordingState(classData || {});
   const sessionId = classData?.activeSessionId || selectedSession || null;
   const questionIdentity = resolveQuestionIdentity(classData || {});
+  const sessionStatus = getSessionStatusSummary(classData || {});
 
   useEffect(() => {
     if (!classId) return;
@@ -264,15 +269,15 @@ export default function TeacherDashboard({ classId }) {
   const setPhase = async (phase) => {
     if (!classId) return;
     const classRef = doc(db, "classes", classId);
-    const nextUpdate = {
-      classPhase: phase,
-      updatedAt: Date.now(),
-      lessonLocked: phase === "instruction"
-    };
+    const now = Date.now();
+    const nextUpdate = buildPhaseUpdate(phase, {}, now);
 
     if (phase === "instruction") {
-      nextUpdate.instructionVisible = true;
-      nextUpdate.questionOpen = false;
+      await logClientEvent("teacher_phase_change", {
+        classId,
+        phase,
+        activeSessionId: classData?.activeSessionId || null
+      });
     }
 
     if (phase === "recording") {
@@ -289,13 +294,11 @@ export default function TeacherDashboard({ classId }) {
       }
 
       nextUpdate.activeSessionId = nextSessionId;
-      nextUpdate.questionOpen = true;
-      nextUpdate.recording = {
-        startTime: serverTimestamp(),
-        clientStartTime: Date.now(),
-        durationMs: DEFAULT_RECORDING_DURATION_MS
-      };
       nextUpdate.slideIndex = 0;
+      nextUpdate.recording = {
+        ...nextUpdate.recording,
+        startTime: serverTimestamp()
+      };
     }
 
     if (phase === "discussion" || phase === "reflection") {
@@ -310,11 +313,12 @@ export default function TeacherDashboard({ classId }) {
       nextUpdate.reflectionPrompts = reflectionPrompts;
     }
 
-    if (phase !== "recording") {
-      nextUpdate.questionOpen = false;
-    }
-
     await setDoc(classRef, nextUpdate, { merge: true });
+    await logClientEvent("teacher_phase_change", {
+      classId,
+      phase,
+      activeSessionId: nextUpdate.activeSessionId || classData?.activeSessionId || null
+    });
 
     const tabByPhase = {
       instruction: "tools",
@@ -362,25 +366,37 @@ export default function TeacherDashboard({ classId }) {
 
   const openQuestion = async () => {
     if (!classId) return;
-    await updateDoc(doc(db, "classes", classId), { questionOpen: true });
+    await setPhase("recording");
   };
 
   const closeQuestion = async () => {
     if (!classId) return;
-    await updateDoc(doc(db, "classes", classId), {
-      questionOpen: false,
-      slideIndex: 0
+    await setDoc(
+      doc(db, "classes", classId),
+      buildCloseQuestionUpdate(),
+      { merge: true }
+    );
+    await logClientEvent("teacher_question_closed", {
+      classId,
+      activeSessionId: classData?.activeSessionId || null
     });
   };
 
   const reopenSession = async (sessionIdToReopen) => {
     if (!classId || !sessionIdToReopen) return;
-    await updateDoc(doc(db, "classes", classId), {
-      activeSessionId: sessionIdToReopen,
-      questionOpen: true,
-      classPhase: "instruction"
+    const existingSession = sessions.find((session) => session.id === sessionIdToReopen) || {};
+    const reopenUpdate = buildReopenSessionUpdate(sessionIdToReopen, existingSession);
+    reopenUpdate.recording = {
+      ...reopenUpdate.recording,
+      startTime: serverTimestamp()
+    };
+    await setDoc(doc(db, "classes", classId), reopenUpdate, { merge: true });
+    await logClientEvent("teacher_session_reopened", {
+      classId,
+      sessionId: sessionIdToReopen
     });
     setSelectedSession(sessionIdToReopen);
+    setActiveTab("live");
   };
 
   const restartQuestionForStudents = async () => {
@@ -413,14 +429,17 @@ export default function TeacherDashboard({ classId }) {
         discussionPrompts: translatedPrompts.discussionPrompts,
         reflectionPrompts: translatedPrompts.reflectionPrompts,
         recording: {
-          startTime: serverTimestamp(),
-          clientStartTime: Date.now(),
-          durationMs: DEFAULT_RECORDING_DURATION_MS
+          ...buildPhaseUpdate("recording").recording,
+          startTime: serverTimestamp()
         }
       },
       { merge: true }
     );
 
+    await logClientEvent("teacher_question_restarted", {
+      classId,
+      sessionId: newSessionRef.id
+    });
     setSelectedSession(newSessionRef.id);
     setActiveTab("live");
   };
@@ -583,6 +602,30 @@ export default function TeacherDashboard({ classId }) {
           {langSaved && (
             <span style={{ color: "#2f9e44", fontWeight: "600", fontSize: 13 }}>Saved</span>
           )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginBottom: 25,
+          padding: 14,
+          background: "#fff4e6",
+          border: "1px solid #ffd8a8",
+          borderRadius: 10,
+          display: "flex",
+          gap: 20,
+          flexWrap: "wrap",
+          fontSize: 14
+        }}
+      >
+        <div><strong>Phase:</strong> {sessionStatus.phase}</div>
+        <div><strong>Question:</strong> {sessionStatus.questionOpen ? "Open" : "Closed"}</div>
+        <div><strong>Session:</strong> {sessionStatus.hasActiveSession ? "Active" : "None"}</div>
+        <div>
+          <strong>Response Window:</strong>{" "}
+          {sessionStatus.windowEnd
+            ? `${Math.ceil(sessionStatus.remainingMs / 60000)} min remaining`
+            : "Not running"}
         </div>
       </div>
 

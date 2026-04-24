@@ -20,7 +20,10 @@ export const SUPPORTED_LANGUAGES = {
   it: "Italiano"
 };
 
-const TRANSLATE_URL = "https://translate-763779331556.us-central1.run.app";
+const TRANSLATE_URL =
+  process.env.REACT_APP_TRANSLATE_API_URL ||
+  process.env.TRANSLATE_API_URL ||
+  "/api/translate";
 
 const cache = {};
 

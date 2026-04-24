@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { db, auth } from "../../firebase";
-import { collection, addDoc, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function CreateClass() {
 
@@ -50,8 +50,8 @@ const createClass = async () => {
     // 🔥 ensure unique join code
     const code = await generateUniqueCode();
 
-    await addDoc(collection(db, "classes"), {
-className: className,
+    const classRef = await addDoc(collection(db, "classes"), {
+className: className.trim(),
 teacherId: auth.currentUser.uid,
 
 // 🔥 SAFEST VERSION
@@ -80,6 +80,10 @@ spotlightResponseId: null,
 
 // optional but useful
 currentQuestionIncrement: true
+    });
+
+    await setDoc(doc(db, "joinCodes", code), {
+      classId: classRef.id
     });
 
     setJoinCode(code);

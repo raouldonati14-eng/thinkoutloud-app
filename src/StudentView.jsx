@@ -1,9 +1,21 @@
 import React, { useEffect, useState } from "react";
-import { doc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  query,
+  setDoc,
+  where
+} from "firebase/firestore";
 import { db } from "./firebase";
 import EssentialQuestionScreen from "./screens/EssentialQuestionScreen";
+import { logClientEvent } from "./utils/logEvent";
 import { useRecordingState } from "./utils/useRecordingState";
 import { SUPPORTED_LANGUAGES, translateMany } from "./utils/translate";
+
+const STUDENT_PROFILE_STORAGE_KEY = "tol:student-profile";
 
 export default function StudentView() {
   const [classData, setClassData] = useState(null);
@@ -18,7 +30,9 @@ export default function StudentView() {
   const [language, setLanguage] = useState("en");
   const [makeupData, setMakeupData] = useState(null);
   const [makeupStarted, setMakeupStarted] = useState(false);
-  console.log("makeupData:", makeupData, "makeupStarted:", makeupStarted);
+  const [joinError, setJoinError] = useState("");
+  const [joinStatus, setJoinStatus] = useState("");
+  const [isJoining, setIsJoining] = useState(false);
 
   // 🌐 TRANSLATED UI STRINGS
   const [ui, setUi] = useState({
@@ -41,9 +55,50 @@ export default function StudentView() {
   const presentationMode = classData?.presentationMode || false;
   const slideIndex = classData?.slideIndex || 0;
   const seconds = Math.ceil(timeLeft / 1000);
+  const studentSessionStateKey =
+    selectedClassId && classData?.activeSessionId && student
+      ? `tol:student-session:${selectedClassId}:${classData.activeSessionId}:${student}`
+      : null;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const savedProfile = window.localStorage.getItem(STUDENT_PROFILE_STORAGE_KEY);
+    if (!savedProfile) return;
+
+    try {
+      const parsed = JSON.parse(savedProfile);
+      setJoinCode(parsed.joinCode || "");
+      setSelectedClassId(parsed.selectedClassId || "");
+      setLastName(parsed.lastName || "");
+      setFirstName(parsed.firstName || "");
+      setStudent(parsed.student || null);
+      setLanguage(parsed.language || "en");
+    } catch (error) {
+      console.error("Could not restore student profile", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    window.localStorage.setItem(
+      STUDENT_PROFILE_STORAGE_KEY,
+      JSON.stringify({
+        joinCode,
+        selectedClassId,
+        lastName,
+        firstName,
+        student,
+        language
+      })
+    );
+  }, [firstName, joinCode, language, lastName, selectedClassId, student]);
 
   // 🌐 RE-TRANSLATE UI WHEN LANGUAGE CHANGES
   useEffect(() => {
+    let cancelled = false;
+
     if (language === "en") {
       setUi({
         joinClass: "Join Class",
@@ -61,7 +116,9 @@ export default function StudentView() {
         startMakeup: "▶️ Start Make-Up",
         presentationMode: "🎬 Presentation Mode"
       });
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     const keys = [
@@ -73,6 +130,7 @@ export default function StudentView() {
     ];
 
     translateMany(keys, language, "student").then(translated => {
+      if (cancelled) return;
       setUi({
         joinClass: translated[0],
         joinCode: translated[1],
@@ -90,6 +148,10 @@ export default function StudentView() {
         presentationMode: translated[13]
       });
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [language]);
 
   // 🔥 CLASS LISTENER
@@ -97,9 +159,15 @@ export default function StudentView() {
     if (!selectedClassId) return;
     const classRef = doc(db, "classes", selectedClassId);
     const unsubscribe = onSnapshot(classRef, (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        setClassData(null);
+        setClassLoaded(false);
+        setJoinError("This class is no longer available. Please re-enter your join code.");
+        return;
+      }
       setClassData(snap.data());
       setClassLoaded(true);
+      setJoinError("");
     });
     return () => unsubscribe();
   }, [selectedClassId]);
@@ -109,6 +177,30 @@ export default function StudentView() {
     if (!classData?.activeSessionId) return;
     setStudentStarted(false);
   }, [classData?.activeSessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !studentSessionStateKey) return;
+
+    const savedState = window.localStorage.getItem(studentSessionStateKey);
+    if (!savedState) return;
+
+    try {
+      const parsed = JSON.parse(savedState);
+      setStudentStarted(Boolean(parsed.studentStarted));
+      setMakeupStarted(Boolean(parsed.makeupStarted));
+    } catch (error) {
+      console.error("Could not restore student session state", error);
+    }
+  }, [studentSessionStateKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !studentSessionStateKey) return;
+
+    window.localStorage.setItem(
+      studentSessionStateKey,
+      JSON.stringify({ studentStarted, makeupStarted })
+    );
+  }, [makeupStarted, studentSessionStateKey, studentStarted]);
 
   // 🔥 MAKE-UP LISTENER
   useEffect(() => {
@@ -141,32 +233,82 @@ export default function StudentView() {
     str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 
   const startSession = async () => {
-    const code = joinCode.trim().toUpperCase();
+    const code = joinCode.replace(/\s+/g, "").trim().toUpperCase();
     if (!code || !lastName || !firstName) {
-      alert("Please enter all fields.");
+      setJoinError("Enter the class code, last name, and first name to continue.");
+      logClientEvent("student_join_validation_failed", {
+        hasCode: Boolean(code),
+        hasLastName: Boolean(lastName),
+        hasFirstName: Boolean(firstName)
+      });
       return;
     }
-    const joinRef = doc(db, "joinCodes", code);
-    const joinSnap = await getDoc(joinRef);
-    if (!joinSnap.exists()) { alert("Invalid join code"); return; }
 
-    const classId = joinSnap.data().classId;
-    const formattedName = `${capitalize(lastName)}, ${capitalize(firstName)}`;
+    setIsJoining(true);
+    setJoinError("");
+    setJoinStatus("Joining class...");
 
-    setStudentStarted(false);
-    setClassData(null);
-    setClassLoaded(false);
-    setSelectedClassId(classId);
-    setStudent(formattedName);
+    try {
+      const joinRef = doc(db, "joinCodes", code);
+      const joinSnap = await getDoc(joinRef);
+      let classId = joinSnap.exists() ? joinSnap.data().classId : null;
+
+      if (!classId) {
+        const classQuery = query(
+          collection(db, "classes"),
+          where("joinCode", "==", code)
+        );
+        const classSnap = await getDocs(classQuery);
+
+        if (!classSnap.empty) {
+          classId = classSnap.docs[0].id;
+          await setDoc(joinRef, { classId }, { merge: true });
+        }
+      }
+
+      if (!classId) {
+        setJoinError("Code not found. Ask your teacher to confirm the 5-character join code.");
+        setJoinStatus("");
+        logClientEvent("student_join_code_not_found", { joinCode: code });
+        return;
+      }
+
+      const formattedName = `${capitalize(lastName)}, ${capitalize(firstName)}`;
+
+      setStudentStarted(false);
+      setClassData(null);
+      setClassLoaded(false);
+      setSelectedClassId(classId);
+      setStudent(formattedName);
+      setJoinStatus("Connected. Waiting for class data...");
+      logClientEvent("student_join_succeeded", {
+        classId,
+        joinCode: code
+      });
+    } catch (error) {
+      console.error("Join failed", error);
+      setJoinError("We could not connect right now. Check your internet and try again.");
+      setJoinStatus("");
+      logClientEvent("student_join_failed", {
+        joinCode: code,
+        message: error?.message || "unknown"
+      });
+    } finally {
+      setIsJoining(false);
+    }
   };
 
   // 🌐 TRANSLATE CONTENT (question text, prompts, instructions)
   const [translatedContent, setTranslatedContent] = useState({});
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!classData || language === "en") {
       setTranslatedContent({});
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     const toTranslate = [
@@ -177,6 +319,7 @@ export default function StudentView() {
     ].filter(Boolean);
 
     translateMany(toTranslate, language, "student").then(results => {
+      if (cancelled) return;
       let i = 0;
       const map = {};
       if (classData.instructionText) map.instructionText = results[i++];
@@ -189,6 +332,10 @@ export default function StudentView() {
       }
       setTranslatedContent(map);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [classData, language]);
 
   const t = (key) => translatedContent[key] || classData?.[key] || "";
@@ -218,7 +365,23 @@ export default function StudentView() {
                 <div>
                   {recordingState === "active" ? `🎤 ${seconds}s` : ui.timeUp}
                 </div>
-                <button onClick={() => setStudentStarted(true)}>
+                <button
+                  onClick={() => setStudentStarted(true)}
+                  style={{
+                    minWidth: 220,
+                    minHeight: 64,
+                    padding: "18px 28px",
+                    marginTop: 16,
+                    background: "#228be6",
+                    color: "white",
+                    border: "none",
+                    borderRadius: 12,
+                    fontWeight: "bold",
+                    fontSize: 24,
+                    cursor: "pointer",
+                    boxShadow: "0 12px 24px rgba(34, 139, 230, 0.24)"
+                  }}
+                >
                   {ui.startResponse}
                 </button>
               </>
@@ -313,20 +476,41 @@ export default function StudentView() {
 
           <button
             onClick={startSession}
+            disabled={isJoining}
             style={{
               width: "100%", padding: 12, background: "#228be6",
               color: "white", border: "none", borderRadius: 6,
-              fontWeight: "bold", fontSize: 16, cursor: "pointer"
+              fontWeight: "bold", fontSize: 16, cursor: isJoining ? "wait" : "pointer",
+              opacity: isJoining ? 0.75 : 1
             }}
           >
-            {ui.start}
+            {isJoining ? "Joining..." : ui.start}
           </button>
+
+          {joinStatus && (
+            <div style={{ marginTop: 12, fontSize: 14, color: "#495057" }}>
+              {joinStatus}
+            </div>
+          )}
+          {joinError && (
+            <div style={{ marginTop: 12, fontSize: 14, color: "#c92a2a" }}>
+              {joinError}
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  if (!classLoaded) return <div />;
+  if (!classLoaded) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ color: "#495057", fontSize: 18 }}>
+          {joinStatus || "Reconnecting to your class..."}
+        </div>
+      </div>
+    );
+  }
 
   /* ---------------- MAIN ---------------- */
   return (

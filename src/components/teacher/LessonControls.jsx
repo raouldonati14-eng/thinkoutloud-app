@@ -38,10 +38,11 @@ export default function LessonControl({ classId }) {
         updateData.activeSessionId = sessionRef.id;
 
         updateData.recording = {
-  startTime: serverTimestamp(),
-  clientStartTime: Date.now(),
-  durationMs: 60000
-};
+          startTime: serverTimestamp(),
+          clientStartTime: Date.now(),
+          durationMs: 15 * 60 * 1000,
+          responseWindowEndsAt: Date.now() + 15 * 60 * 1000
+        };
 
         updateData.questionOpen = true;
         updateData.category = "math";

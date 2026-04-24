@@ -5,6 +5,7 @@ import {
   where,
   onSnapshot,
   doc,
+  getDoc,
   setDoc,
   addDoc
 } from "firebase/firestore";
@@ -58,12 +59,23 @@ export default function AdminDashboard({ roleData }) {
   /* ================= CREATE CLASS ================= */
   const handleCreateClass = async () => {
     try {
-      await addDoc(collection(db, "classes"), {
+      let joinCode = "";
+
+      do {
+        joinCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+      } while ((await getDoc(doc(db, "joinCodes", joinCode))).exists());
+
+      const classRef = await addDoc(collection(db, "classes"), {
         className: newClassName,
         schoolId: roleData.schoolId,
         teacherId: null,
+        joinCode,
         active: true,
         createdAt: new Date()
+      });
+
+      await setDoc(doc(db, "joinCodes", joinCode), {
+        classId: classRef.id
       });
 
       alert("Class created!");

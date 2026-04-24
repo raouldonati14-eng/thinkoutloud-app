@@ -154,7 +154,8 @@ export default function ClassroomControlPanel({ classId, classData, setPhase }) 
                 recording: {
                   startTime: serverTimestamp(),
                   clientStartTime: Date.now(),
-                  durationMs: 60000
+                  durationMs: 15 * 60 * 1000,
+                  responseWindowEndsAt: Date.now() + 15 * 60 * 1000
                 }
               });
             }}

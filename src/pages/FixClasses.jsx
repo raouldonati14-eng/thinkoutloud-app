@@ -80,8 +80,9 @@ export default function FixClasses() {
         if (data.recording === null || data.recording === undefined) {
           updates.recording = {
             startTime: null,
-            durationMs: 60000,
-            clientStartTime: null
+            durationMs: 15 * 60 * 1000,
+            clientStartTime: null,
+            responseWindowEndsAt: null
           };
           addLog(`  + recording: default map`);
         }

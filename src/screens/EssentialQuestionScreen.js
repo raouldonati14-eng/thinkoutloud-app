@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { db } from "../firebase";
-import {
-  doc,
-  getDoc
-} from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 
 import ThinkOutLoudRecorder from "../components/ThinkOutLoudRecorder";
+import { useBatchTranslate } from "../hooks/useBatchTranslate";
 import { resolveQuestionIdentity } from "../utils/questionIdentity";
 
 export default function EssentialQuestionScreen({
@@ -18,11 +16,56 @@ export default function EssentialQuestionScreen({
   writtenResponse: initialWrittenResponse = ""
 }) {
   const [spotlight, setSpotlight] = useState(null);
-  const [writtenResponse, setWrittenResponse] = useState(initialWrittenResponse);
   const [isRecording, setIsRecording] = useState(false);
 
   const identity = resolveQuestionIdentity(classData || {});
   const questionText = translatedQuestion || identity.text;
+  const interfaceText = useBatchTranslate(
+    [
+      identity.title || "Essential Question",
+      "Recording in progress - read your notes aloud...",
+      "Write your response here, then press Start and read it aloud..."
+    ],
+    studentLanguage,
+    "student"
+  );
+  const translatedTitle = interfaceText[0] || identity.title || "Essential Question";
+  const recordingPlaceholder =
+    interfaceText[1] || "Recording in progress - read your notes aloud...";
+  const planningPlaceholder =
+    interfaceText[2] || "Write your response here, then press Start and read it aloud...";
+  const notesStorageKey =
+    classId && classData?.activeSessionId && student
+      ? `tol:notes:${classId}:${classData.activeSessionId}:${student}:${identity.title || "question"}`
+      : null;
+  const [writtenResponse, setWrittenResponse] = useState(() => {
+    if (typeof window === "undefined" || !notesStorageKey) {
+      return initialWrittenResponse;
+    }
+
+    return window.localStorage.getItem(notesStorageKey) ?? initialWrittenResponse;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !notesStorageKey) {
+      setWrittenResponse(initialWrittenResponse);
+      return;
+    }
+
+    const saved = window.localStorage.getItem(notesStorageKey);
+    setWrittenResponse(saved ?? initialWrittenResponse);
+  }, [initialWrittenResponse, notesStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !notesStorageKey) return;
+
+    if (writtenResponse) {
+      window.localStorage.setItem(notesStorageKey, writtenResponse);
+      return;
+    }
+
+    window.localStorage.removeItem(notesStorageKey);
+  }, [notesStorageKey, writtenResponse]);
 
   useEffect(() => {
     if (!classData) return;
@@ -77,19 +120,14 @@ export default function EssentialQuestionScreen({
         </div>
       )}
 
-      <h1>{identity.title || "Essential Question"}</h1>
+      <h1>{translatedTitle}</h1>
       <p style={{ fontSize: 18 }}>{questionText}</p>
 
-      {/* ✅ Planning textarea — editable before recording, read-only during */}
       <textarea
         value={writtenResponse}
         onChange={(e) => setWrittenResponse(e.target.value)}
         readOnly={isRecording}
-        placeholder={
-          isRecording
-            ? "Recording in progress — read your notes aloud..."
-            : "Write your response here, then press Start and read it aloud..."
-        }
+        placeholder={isRecording ? recordingPlaceholder : planningPlaceholder}
         style={{
           width: "100%",
           minHeight: 120,
@@ -119,6 +157,12 @@ export default function EssentialQuestionScreen({
         teacherLanguage={classData?.teacherLanguage || "en"}
         studentLanguage={studentLanguage}
         writtenResponse={writtenResponse}
+        responseWindowEndsAt={classData?.recording?.responseWindowEndsAt}
+        storageKeyBase={
+          classId && classData?.activeSessionId && student
+            ? `tol:response:${classId}:${classData.activeSessionId}:${student}:${identity.title || "question"}`
+            : null
+        }
         onRecordingChange={setIsRecording}
       />
     </div>

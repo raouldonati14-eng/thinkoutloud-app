@@ -19,39 +19,43 @@ export function toMillis(value) {
   return null;
 }
 
-export function getRecordingTimeLeft(classData, now = Date.now()) {
-  if (classData?.classPhase !== "recording") {
-    return 0;
+export function getRecordingWindowEnd(classData) {
+  const recording = classData?.recording;
+  const explicitEnd =
+    toMillis(recording?.responseWindowEndsAt) ??
+    toMillis(recording?.endsAt);
+
+  if (explicitEnd) {
+    return explicitEnd;
   }
 
-  const recording = classData?.recording;
   const startTime =
-    recording?.startTime?.toMillis?.() ??
-    recording?.clientStartTime ??
-    null;
+    toMillis(recording?.startTime) ??
+    toMillis(recording?.clientStartTime);
   const durationMs =
     typeof recording?.durationMs === "number" &&
     Number.isFinite(recording.durationMs)
       ? recording.durationMs
       : null;
 
-  if (!startTime) {
-    return durationMs ?? 0;
+  if (!startTime || durationMs === null) {
+    return null;
   }
 
-  if (durationMs === null) {
+  return startTime + durationMs;
+}
+
+export function getRecordingTimeLeft(classData, now = Date.now()) {
+  if (classData?.classPhase !== "recording") {
     return 0;
   }
 
-  if (now - startTime > durationMs * 2) {
-    console.warn("Ignoring stale recording");
-    return durationMs;
+  const windowEnd = getRecordingWindowEnd(classData);
+  if (!windowEnd) {
+    return 0;
   }
 
-  const elapsed = Math.max(0, now - startTime);
-  const remainingMs = Math.max(0, durationMs - elapsed);
-
-  return remainingMs;
+  return Math.max(0, windowEnd - now);
 }
 
 export function getRecordingStatus(classData, now = Date.now()) {
@@ -59,31 +63,17 @@ export function getRecordingStatus(classData, now = Date.now()) {
     return "waiting";
   }
 
-  const recording = classData?.recording;
-  const startTime =
-    recording?.startTime?.toMillis?.() ??
-    recording?.clientStartTime ??
-    null;
-  const durationMs =
-    typeof recording?.durationMs === "number" &&
-    Number.isFinite(recording.durationMs)
-      ? recording.durationMs
-      : null;
-
-  if (!startTime) {
+  const windowEnd = getRecordingWindowEnd(classData);
+  if (!windowEnd) {
     return "waiting";
   }
 
-  if (durationMs === null) {
-    return "active";
-  }
-
-  if (now - startTime > durationMs * 2) {
+  if (now - windowEnd > 12 * 60 * 60 * 1000) {
     console.warn("Ignoring stale recording");
     return "waiting";
   }
 
-  return getRecordingTimeLeft(classData, now) > 0 ? "active" : "extended";
+  return now < windowEnd ? "active" : "extended";
 }
 
 export function formatRecordingTime(timeLeft) {
@@ -111,41 +101,28 @@ export function useRecordingState(classData) {
     return { recordingState: "waiting", timeLeft: 0 };
   }
 
-  const recording = classData?.recording;
-  const startTime =
-    recording?.startTime?.toMillis?.() ??
-    recording?.clientStartTime ??
-    null;
-  const durationMs =
-    typeof recording?.durationMs === "number" &&
-    Number.isFinite(recording.durationMs)
-      ? recording.durationMs
-      : null;
-
-  if (!startTime) {
+  const windowEnd = getRecordingWindowEnd(classData);
+  if (!windowEnd) {
     staleWarningShownRef.current = false;
     return {
       recordingState: "waiting",
-      timeLeft: durationMs ?? 0
+      timeLeft: 0
     };
   }
 
-  if (durationMs !== null && now - startTime > durationMs * 3) {
+  if (now - windowEnd > 12 * 60 * 60 * 1000) {
     if (!staleWarningShownRef.current) {
       console.warn("Ignoring stale recording");
       staleWarningShownRef.current = true;
     }
     return {
       recordingState: "waiting",
-      timeLeft: durationMs
+      timeLeft: 0
     };
   }
 
   staleWarningShownRef.current = false;
-
-  const elapsed = Math.max(0, now - startTime);
-  const remainingMs =
-    durationMs === null ? 0 : Math.max(0, durationMs - elapsed);
+  const remainingMs = Math.max(0, windowEnd - now);
 
   return {
     recordingState: remainingMs > 0 ? "active" : "extended",
