@@ -1,43 +1,29 @@
 import React from "react";
 
-function AnalyticsSummary({ analytics }) {
+function AnalyticsSummary({ analytics, responses = [] }) {
 
   if (!analytics) {
-    return (
-      <div style={{ marginBottom: 20 }}>
-        No analytics yet.
-      </div>
-    );
+    return <div style={{ marginBottom: 20 }}>No analytics yet.</div>;
   }
 
   const total = analytics.totalResponses || 0;
 
-  const avgScore = analytics.avgScore || 0;
+  // ✅ Calculate avgScore from responses directly (AI scorer writes score 1/2/3)
+  const avgScore = total === 0 ? 0 :
+    responses.reduce((sum, r) => sum + Number(r.score || 0), 0) / total;
 
-  const reasoningPercent = total
-    ? Math.round((analytics.reasoningDetected / total) * 100)
-    : 0;
+  // ✅ Reasoning % = students who scored 2 or 3 (demonstrated reasoning)
+  const withReasoning = (analytics.strongReasoning || 0) + (analytics.partialReasoning || 0);
+  const reasoningPercent = total ? Math.round((withReasoning / total) * 100) : 0;
 
   return (
-
     <div style={styles.card}>
-
       <strong>Class Analytics</strong>
-
       <div>Total Responses: {total}</div>
-
-      <div>
-        Average Score: {avgScore.toFixed(2)} / 3
-      </div>
-
-      <div>
-        Reasoning Detected: {reasoningPercent}%
-      </div>
-
+      <div>Average Score: {avgScore.toFixed(2)} / 3</div>
+      <div>Reasoning Detected: {reasoningPercent}%</div>
     </div>
-
   );
-
 }
 
 export default React.memo(AnalyticsSummary);
