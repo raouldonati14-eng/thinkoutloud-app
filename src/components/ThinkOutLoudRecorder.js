@@ -110,7 +110,82 @@ const toMillis = (value) => {
 
   return null;
 };
+function getMissingIdeas(written, spoken) {
+  const clean = (text) =>
+    text
+      .toLowerCase()
+      .replace(/[^\w\s.]/g, "")
+      .split(".")
+      .map(s => s.trim())
+      .filter(Boolean);
 
+  const writtenSentences = clean(written);
+  const spokenText = spoken.toLowerCase();
+
+  return writtenSentences.filter(sentence => {
+    const words = sentence.split(/\s+/).filter(Boolean);
+    const matchCount = words.filter(w => new RegExp(`\\b${w}\\b`).test(spokenText)).length;
+
+    return matchCount < Math.ceil(words.length * 0.6);
+  });
+}
+
+function getIdeaCoverage(written, spoken) {
+  const clean = (text) =>
+    text
+      .toLowerCase()
+      .replace(/[^\w\s.]/g, "")
+      .split(".")
+      .map(s => s.trim())
+      .filter(Boolean);
+
+  const writtenSentences = clean(written);
+  const spokenText = spoken.toLowerCase();
+
+  let covered = 0;
+
+  writtenSentences.forEach(sentence => {
+    const words = sentence.split(/\s+/).filter(Boolean);
+    const matchCount = words.filter(w => new RegExp(`\\b${w}\\b`).test(spokenText)).length;
+
+    if (matchCount >= Math.ceil(words.length * 0.6)) {
+      covered++;
+    }
+  });
+
+  return {
+    covered,
+    total: writtenSentences.length
+  };
+}
+
+function generateIdeaFeedback(written, spoken) {
+  const missingIdeas = getMissingIdeas(written, spoken);
+
+  if (!written || missingIdeas.length === 0) {
+    return "You included all of your planned ideas in your response. Great job!";
+  }
+
+  if (missingIdeas.length === 1) {
+    return `You missed one key idea: "${missingIdeas[0]}". Try to include it next time.`;
+  }
+
+  return `You missed ${missingIdeas.length} key ideas. Focus on including all parts of your explanation.`;
+}
+function containsProfanity(text) {
+  const badWords = [
+    "damn", "hell", "shit", "fuck", "bitch", "ass",
+    "crap", "piss", "dumbass", "idiot", "stupid",
+    "wtf", "omfg", "bs", "bullshit",
+    "sucks", "jerk", "loser"
+  ];
+
+  const clean = text.toLowerCase();
+
+  return badWords.some(word =>
+    new RegExp(`\\b${word}\\b`, "i").test(clean)
+  );
+}
 export default function ThinkOutLoudRecorder({
   student,
   questionId,
@@ -600,7 +675,24 @@ export default function ThinkOutLoudRecorder({
       return;
     }
     if (!classId || !student) return;
+    const combinedText = `${transcript} ${writtenResponse}`;
 
+if (containsProfanity(combinedText)) {
+  setError("Please revise your response to remove inappropriate language.");
+  setStatusMessage("Inappropriate language detected.");
+  setIsSubmitting(false);
+
+  logClientEvent("profanity_detected", {
+    studentId: student,
+    classId,
+    sessionId,
+    transcript,
+    writtenResponse,
+    timestamp: Date.now()
+  });
+
+  return;
+}
     try {
       setError("");
       setIsSubmitting(true);
@@ -663,18 +755,21 @@ export default function ThinkOutLoudRecorder({
       }, 15000);
 
       // ✅ AI-powered scoring via Firebase Function
-      const scoreRes = await fetch("https://scoreresponse-763779331556.us-central1.run.app", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript: transcript || "",
-          writtenResponse: writtenResponse || "",
-          questionText,
-          category,
-          studentName: student,
-          studentLanguage: studentLanguage || "en"
-        })
-      });
+     const scoreRes = await fetch(
+  "https://us-central1-think-out-loud-40d3a.cloudfunctions.net/scoreResponse",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transcript: transcript || "",
+      writtenResponse: writtenResponse || "",
+      questionText,
+      category,
+      studentName: student,
+      studentLanguage: studentLanguage || "en"
+    })
+  }
+);
 
       if (!scoreRes.ok) {
         throw new Error(`Scoring request failed with status ${scoreRes.status}`);
@@ -688,14 +783,17 @@ export default function ThinkOutLoudRecorder({
 
       setTimeout(async () => {
         try {
-          await updateDoc(responseRef, {
-            status: "complete",
-            score: assessment.score,
-            feedback: assessment.feedback,
-            analysis: assessment.analysis,
-            vocabularyUsed: assessment.vocabularyUsed || [],
-            completedAt: serverTimestamp()
-          });
+         await updateDoc(responseRef, {
+  status: "complete",
+  score: assessment.score,
+  feedback: assessment.feedback,
+  analysis: assessment.analysis,
+  vocabularyUsed: assessment.vocabularyUsed || [],
+  ideaCoverage: assessment.ideaCoverage || null,
+  missingIdeas: assessment.missingIdeas || [],
+  ideaFeedback: assessment.ideaFeedback || "",
+  completedAt: serverTimestamp()
+});
           logClientEvent("student_response_scored", {
             classId,
             sessionId,
@@ -1056,6 +1154,55 @@ export default function ThinkOutLoudRecorder({
             <div style={{ marginTop: 20 }}>
               <h3><T text="Your Response" lang={studentLanguage} /></h3>
               <div dangerouslySetInnerHTML={{ __html: highlightReasoning(transcript) }} />
+            </div>
+          )}
+         {/* ── Written response ── */}
+          {writtenResponse && (
+            <div style={{ marginTop: 20 }}>
+              <h3><T text="Your Written Response" lang={studentLanguage} /></h3>
+              <div style={{ background: "#f8f9fa", padding: 14, borderRadius: 8, fontSize: 14, lineHeight: 1.6, border: "1px solid #e9ecef" }}>
+                {writtenResponse}
+              </div>
+            </div>
+          )}
+
+          {/* ── Spoken response ── */}
+          {transcript && (
+            <div style={{ marginTop: 20 }}>
+              <h3><T text="Your Spoken Response" lang={studentLanguage} /></h3>
+              <div style={{ background: "#f8f9fa", padding: 14, borderRadius: 8, fontSize: 14, lineHeight: 1.6, border: "1px solid #e9ecef" }}>
+                <div dangerouslySetInnerHTML={{ __html: highlightReasoning(transcript) }} />
+              </div>
+            </div>
+          )}
+
+          {/* ── Idea coverage (from GPT) ── */}
+          {responseData.ideaCoverage && responseData.ideaCoverage.total > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <h3><T text="Idea Coverage" lang={studentLanguage} /></h3>
+              <div style={{
+                padding: 14, borderRadius: 8, fontWeight: 600, fontSize: 15,
+                background: responseData.ideaCoverage.covered === responseData.ideaCoverage.total ? "#ebfbee" : "#fff9db",
+                border: `1px solid ${responseData.ideaCoverage.covered === responseData.ideaCoverage.total ? "#a9e34b" : "#ffd43b"}`
+              }}>
+                {responseData.ideaCoverage.covered} / {responseData.ideaCoverage.total}{" "}
+                <T text="key ideas covered" lang={studentLanguage} />
+              </div>
+              {responseData.ideaFeedback && (
+                <p style={{ marginTop: 10, fontSize: 14, color: "#495057" }}>{responseData.ideaFeedback}</p>
+              )}
+            </div>
+          )}
+
+          {/* ── Missing ideas (from GPT) ── */}
+          {responseData.missingIdeas?.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <h3><T text="Ideas to Add Next Time" lang={studentLanguage} /></h3>
+              <ul style={{ paddingLeft: 20, margin: 0 }}>
+                {responseData.missingIdeas.map((idea, i) => (
+                  <li key={i} style={{ marginBottom: 6, fontSize: 14, color: "#495057" }}>{idea}</li>
+                ))}
+              </ul>
             </div>
           )}
 

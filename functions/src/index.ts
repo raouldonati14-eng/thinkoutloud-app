@@ -1,8 +1,8 @@
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
-import { transcribeFromGCS } from "./services/speech";
+import { transcribeFromGCS } from "./services/speech.js";
 import OpenAI from "openai";
-
+import { buildUserPrompt } from "./prompts/scorePrompt";
 admin.initializeApp();
 
 const db = admin.firestore();
@@ -10,15 +10,8 @@ const db = admin.firestore();
 /* ================= FEEDBACK FUNCTION ================= */
 const generateFeedback = (score: number, transcript: string) => {
   if (!transcript) return "Try explaining your thinking more clearly.";
-
-  if (score === 3) {
-    return "Excellent explanation. You clearly connected ideas and showed strong reasoning.";
-  }
-
-  if (score === 2) {
-    return "Good thinking. Try to make your cause-and-effect reasoning even clearer.";
-  }
-
+  if (score === 3) return "Excellent explanation. You clearly connected ideas and showed strong reasoning.";
+  if (score === 2) return "Good thinking. Try to make your cause-and-effect reasoning even clearer.";
   return "Keep trying. Use words like 'because' or 'this leads to' to explain your thinking.";
 };
 
@@ -26,230 +19,123 @@ const generateFeedback = (score: number, transcript: string) => {
 export const submitStudentResponse = onCall(
   { region: "us-central1" },
   async (request) => {
-
     console.log("🔥 FUNCTION RUNNING");
     console.log("📦 DATA RECEIVED:", request.data);
 
     const data = request.data as any;
+    const { responseId, classCode, sessionId, questionId, student, category, durationSeconds, audioURL } = data;
 
-    const {
-      responseId,
-      classCode,
-      sessionId,
-      questionId,
-      student,
-      category,
-      durationSeconds,
-      audioURL
-    } = data;
-
-    /* ================= VALIDATION ================= */
-    if (
-      !responseId ||
-      !classCode ||
-      !sessionId ||
-      !questionId ||
-      !student ||
-      durationSeconds === undefined ||
-      !audioURL
-    ) {
+    if (!responseId || !classCode || !sessionId || !questionId || !student || durationSeconds === undefined || !audioURL) {
       throw new HttpsError("invalid-argument", "Missing required fields.");
     }
 
-    /* ================= LOAD CLASS ================= */
     const classSnap = await db.doc(`classes/${classCode}`).get();
-
-    if (!classSnap.exists) {
-      throw new HttpsError("not-found", "Class not found.");
-    }
+    if (!classSnap.exists) throw new HttpsError("not-found", "Class not found.");
 
     const teacherId = classSnap.data()?.teacherId;
+    if (!teacherId) throw new HttpsError("internal", "Class missing teacher.");
 
-    if (!teacherId) {
-      throw new HttpsError("internal", "Class missing teacher.");
-    }
-
-    /* ================= TRANSCRIPTION ================= */
     let transcriptText = "";
 
     try {
       console.log("🧠 Starting transcription...");
-
       const bucket = admin.storage().bucket();
       const bucketName = bucket.name;
-
       console.log("🪵 AUDIO PATH:", audioURL);
 
       const file = bucket.file(audioURL);
       const [exists] = await file.exists();
-
       console.log("📁 FILE EXISTS:", exists);
 
-      if (!exists) {
-        throw new Error("Audio file does not exist in storage");
-      }
+      if (!exists) throw new Error("Audio file does not exist in storage");
 
       const gcsUri = `gs://${bucketName}/${audioURL}`;
       console.log("🌐 GCS URI:", gcsUri);
 
       transcriptText = await transcribeFromGCS(gcsUri);
-
       console.log("📝 TRANSCRIPT:", transcriptText);
 
-      if (!transcriptText) {
-        throw new Error("Empty transcript returned");
-      }
-
+      if (!transcriptText) throw new Error("Empty transcript returned");
     } catch (err: any) {
       console.error("❌ TRANSCRIPTION ERROR FULL:", err);
       throw new HttpsError("internal", err.message || "Transcription failed");
     }
 
-    /* ================= SCORING ================= */
-
     const safeTranscript = transcriptText.toLowerCase();
-
     const durationMet = durationSeconds >= 60;
 
-    // ✅ FIXED sentence splitting
     const sentences = safeTranscript
       .replace(/([.!?])([A-Z])/g, "$1 $2")
       .split(/[.!?]+/)
       .map(s => s.trim())
       .filter(s => s.length > 0);
 
-    // ✅ UPGRADED reasoning detection
     const causalPatterns = [
-      /because/i,
-      /since/i,
-      /\bso\b/i,
-      /so that/i,
-      /so it/i,
-      /therefore/i,
-      /thus/i,
-      /as a result/i,
-      /this means/i,
-      /this shows/i,
-      /that'?s why/i,
-      /which means/i,
-      /which leads to/i,
-      /leads to/i,
-      /can lead to/i,
-      /results in/i,
-      /results?/i,
-      /due to/i,
-      /causes?/i,
-      /creates?/i,
-      /makes?/i,
-      /allows?/i,
-      /driven by/i,
-      /adapt(s|ation)?/i,
-      /if .* then/i
+      /because/i, /since/i, /\bso\b/i, /so that/i, /so it/i,
+      /therefore/i, /thus/i, /as a result/i, /this means/i, /this shows/i,
+      /that'?s why/i, /which means/i, /which leads to/i, /leads to/i,
+      /can lead to/i, /results in/i, /results?/i, /due to/i, /causes?/i,
+      /creates?/i, /makes?/i, /allows?/i, /driven by/i, /adapt(s|ation)?/i, /if .* then/i
     ];
 
     let causalChains = 0;
-
     sentences.forEach((s) => {
-      causalPatterns.forEach(pattern => {
-        if (pattern.test(s)) {
-          causalChains++;
-        }
-      });
+      causalPatterns.forEach(pattern => { if (pattern.test(s)) causalChains++; });
     });
-
-    // ✅ prevent runaway counts
     causalChains = Math.min(causalChains, 5);
 
-    const longSentences = sentences.filter(
-      (s) => s.split(" ").length > 12
-    );
-
+    const longSentences = sentences.filter(s => s.split(" ").length > 12);
     let conceptLinks = 0;
-
     for (let i = 0; i < sentences.length - 1; i++) {
-      if (
-        sentences[i].length > 20 &&
-        sentences[i + 1].length > 20
-      ) {
-        conceptLinks++;
-      }
+      if (sentences[i].length > 20 && sentences[i + 1].length > 20) conceptLinks++;
     }
 
-    // ✅ DEBUG LOGS (critical)
     console.log("🧠 SENTENCE COUNT:", sentences.length);
     console.log("🧠 CAUSAL CHAINS:", causalChains);
     console.log("🧠 LONG SENTENCES:", longSentences.length);
     console.log("🧠 CONCEPT LINKS:", conceptLinks);
 
     let score = 1;
-
-    if (
-      durationMet &&
-      causalChains >= 2 &&
-      longSentences.length >= 2 &&
-      conceptLinks >= 1
-    ) {
-      score = 3;
-    } else if (
-      durationMet &&
-      (causalChains >= 1 || longSentences.length >= 2)
-    ) {
-      score = 2;
-    }
+    if (durationMet && causalChains >= 2 && longSentences.length >= 2 && conceptLinks >= 1) score = 3;
+    else if (durationMet && (causalChains >= 1 || longSentences.length >= 2)) score = 2;
 
     const reasoningDetected = causalChains > 0;
-
     console.log("🧠 FINAL SCORE:", score);
 
-    /* ================= SAVE ================= */
-    await db.doc(
-      `classes/${classCode}/sessions/${sessionId}/responses/${responseId}`
-    ).set({
-      classId: classCode,
-      teacherId,
-      questionId,
-      student,
-      category: category || "General",
-      transcript: transcriptText,
-      durationSeconds,
-      audioURL,
-      score,
-      reasoningDetected,
-      status: "graded",
-      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    await db.doc(`classes/${classCode}/sessions/${sessionId}/responses/${responseId}`).set({
+      classId: classCode, teacherId, questionId, student,
+      category: category || "General", transcript: transcriptText,
+      durationSeconds, audioURL, score, reasoningDetected,
+      status: "graded", timestamp: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    /* ================= RETURN ================= */
     return {
-      score,
-      reasoningDetected,
-      transcript: transcriptText,
+      score, reasoningDetected, transcript: transcriptText,
       aiFeedback: generateFeedback(score, transcriptText),
       feedback: {
-        durationMet,
-        reasoningCount: causalChains,
-        explanationDepth: longSentences.length,
-        conceptConnections: conceptLinks
+        durationMet, reasoningCount: causalChains,
+        explanationDepth: longSentences.length, conceptConnections: conceptLinks
       }
     };
   }
 );
 
 /* ================= TRANSLATE FUNCTION ================= */
-
 export const translate = onRequest(
-  { region: "us-central1", cors: true },
+  { region: "us-central1", cors: true, secrets: ["OPENAI_API_KEY"] },
   async (req, res) => {
     if (req.method !== "POST") { res.status(405).end(); return; }
 
-    const { text, texts, targetLanguage, context = "student" } = req.body || {};
+    // ✅ OpenAI instantiated inside handler — never at module level
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const { text, texts, targetLanguage, context = "student" } = req.body || {};
 
     const langName: Record<string, string> = {
       es: "Español", pt: "Português", fr: "Français", ht: "Kreyòl Ayisyen",
       ar: "Arabic", zh: "Chinese", vi: "Vietnamese", tl: "Tagalog",
       ko: "Korean", pl: "Polski", ru: "Russian", so: "Soomaali",
-      ur: "Urdu", hi: "Hindi", it: "Italiano"
+      ur: "Urdu", hi: "Hindi", it: "Italiano", ja: "Japanese"
     };
 
     const audience = context === "teacher"
@@ -275,17 +161,11 @@ export const translate = onRequest(
 
     try {
       if (Array.isArray(texts)) {
-        if (!targetLanguage || targetLanguage === "en") {
-          res.json({ translations: texts }); return;
-        }
+        if (!targetLanguage || targetLanguage === "en") { res.json({ translations: texts }); return; }
         const translations = await Promise.all(texts.map(translateText));
         res.json({ translations }); return;
       }
-
-      if (!text || !targetLanguage || targetLanguage === "en") {
-        res.json({ translatedText: text }); return;
-      }
-
+      if (!text || !targetLanguage || targetLanguage === "en") { res.json({ translatedText: text }); return; }
       res.json({ translatedText: await translateText(text) });
     } catch (err) {
       console.error("Translation error:", err);
@@ -321,6 +201,7 @@ export const scoreResponse = onRequest(
       return;
     }
 
+    // ✅ OpenAI instantiated inside handler — never at module level
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const langNames: Record<string, string> = {
@@ -337,27 +218,46 @@ export const scoreResponse = onRequest(
     const systemPrompt = `
 You are an expert health education teacher scoring a 9th grade student's spoken response.
 
+IMPORTANT RULES:
+- If the response contains profanity, slurs, or inappropriate language, assign score 1 regardless of content quality. Note this clearly in the feedback and analysis.
+- If the spoken transcript appears garbled, nonsensical, or does not match the topic, prioritize the written notes for scoring instead.
+- If both spoken and written responses are off-topic or empty, assign score 1.
+- Score based on MEANING and UNDERSTANDING, not just keyword matching.
+
 RUBRIC:
 - Score 3 (Proficient): Response is complete (35+ words, 2+ sentences), uses 3+ lesson vocabulary terms accurately, AND includes 2+ reasoning signals with content (because, therefore, this leads to, as a result, for example, etc.). The student clearly connects ideas with evidence.
 - Score 2 (Developing): Response is partial (18+ words, 1+ sentences), uses at least 1 vocabulary term, AND includes at least 1 reasoning signal with content.
-- Score 1 (Beginning): Response is very short, missing vocabulary, or lacks any reasoning.
+- Score 1 (Beginning): Response is very short, missing vocabulary, lacks reasoning, is off-topic, or contains inappropriate language.
 
 CATEGORY: ${category || "Health"}
 QUESTION: ${questionText || "Explain your thinking about this health topic."}
 STUDENT NAME: ${studentName || "The student"}
 
+IDEA ANALYSIS INSTRUCTIONS:
+If the student provided written notes, extract the key ideas from those notes (each distinct claim or explanation counts as one idea). Then check which of those ideas actually appeared in the spoken response. An idea is "covered" if the spoken response expresses the same meaning, even in different words.
+
+SCORING NOTE: If the spoken transcript looks garbled or off-topic compared to the written notes, weight the written notes more heavily for scoring.
+
 Respond ONLY with valid JSON in this exact format:
 {
   "score": 1, 2, or 3,
-  "feedback": "2-3 sentence encouraging feedback addressed to the student directly in ${langName}. Start with a strength, then give one specific next step.",
-  "analysis": "1-2 sentence teacher-facing explanation of why this score was given, in English.",
-  "vocabularyUsed": ["array", "of", "lesson", "vocabulary", "words", "found", "in", "response"]
+  "feedback": "2-3 sentence encouraging feedback addressed to the student directly in ${langName}. If profanity was used, note that respectful language is required. Start with a strength if possible, then give one specific next step.",
+  "analysis": "1-2 sentence teacher-facing explanation of why this score was given, in English. Note if profanity was detected or if the transcript appeared garbled.",
+  "vocabularyUsed": ["array", "of", "lesson", "vocabulary", "words", "found", "in", "response"],
+  "ideaCoverage": {
+    "covered": 0,
+    "total": 0
+  },
+  "missingIdeas": ["brief description of each idea from written notes not expressed in spoken response"],
+  "ideaFeedback": "1 sentence in ${langName} about which ideas were covered well and which were missing. Empty string if no written notes provided."
 }
 `;
 
-    const userContent = writtenText
-      ? `Spoken response: ${responseText}\n\nWritten notes: ${writtenText}`
-      : `Spoken response: ${responseText}`;
+  const userContent = buildUserPrompt({
+  questionText: questionText || "",
+  writtenResponse: writtenText,
+  transcript: responseText
+});
 
     try {
       const completion = await openai.chat.completions.create({
@@ -370,22 +270,26 @@ Respond ONLY with valid JSON in this exact format:
       });
 
       const raw = completion.choices?.[0]?.message?.content?.trim() || "";
+console.log("🔍 RAW GPT OUTPUT:\n", raw);
 
-      // Strip markdown fences if present
-      const clean = raw.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+const clean = raw
+  .replace(/^```json\s*/i, "")
+  .replace(/```\s*$/i, "")
+  .trim();
 
-      const parsed = JSON.parse(clean);
-
+const parsed = JSON.parse(clean);
+console.log("✅ PARSED GPT OUTPUT:", parsed);
       res.json({
         score: Math.min(3, Math.max(1, Number(parsed.score) || 1)),
         feedback: parsed.feedback || "Good effort. Keep practicing.",
         analysis: parsed.analysis || "",
-        vocabularyUsed: Array.isArray(parsed.vocabularyUsed) ? parsed.vocabularyUsed : []
+        vocabularyUsed: Array.isArray(parsed.vocabularyUsed) ? parsed.vocabularyUsed : [],
+        ideaCoverage: parsed.ideaCoverage || null,
+        missingIdeas: Array.isArray(parsed.missingIdeas) ? parsed.missingIdeas : [],
+        ideaFeedback: parsed.ideaFeedback || ""
       });
-
     } catch (err) {
       console.error("scoreResponse error:", err);
-      // Fallback so the app never crashes
       res.json({
         score: 1,
         feedback: "We could not generate feedback for this response. Please try again.",
