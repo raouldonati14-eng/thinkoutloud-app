@@ -116,19 +116,65 @@ const toMillis = (value) => {
   return null;
 };
 
-function containsProfanity(text) {
-  const badWords = [
-    "damn", "hell", "shit", "fuck", "bitch", "ass",
-    "crap", "piss", "dumbass", "idiot", "stupid",
-    "wtf", "omfg", "bs", "bullshit",
-    "sucks", "jerk", "loser"
-  ];
+const BLOCKED_LANGUAGE = [
+  "fuck", "fucking", "fucked", "fucker",
+  "shit", "shitty", "shithead",
+  "bitch",
+  "bullshit", "bs",
+  "asshole", "dumbass", "jackass",
+  "motherfucker",
+  "goddamn", "damn", "hell",
+  "wtf", "omfg",
+  "piss"
+];
 
-  const clean = text.toLowerCase();
+const WARN_LANGUAGE = [
+  "ass",
+  "crap",
+  "idiot", "stupid",
+  "sucks",
+  "jerk", "loser",
+  "bastard",
+  "fricking", "frigging",
+  "douche", "douchebag",
+  "badass"
+];
 
-  return badWords.some(word =>
-    new RegExp(`\\b${word}\\b`, "i").test(clean)
-  );
+const escapeForWordBoundary = (word) =>
+  word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function analyzeLanguage(text = "") {
+  const clean = text
+    .toLowerCase()
+    .replace(/[^\w\s']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const getMatches = (words) =>
+    words.filter((word) =>
+      new RegExp(`\\b${escapeForWordBoundary(word)}\\b`, "i").test(clean)
+    );
+
+  const blockedMatches = getMatches(BLOCKED_LANGUAGE);
+  if (blockedMatches.length > 0) {
+    return {
+      severity: "block",
+      matches: blockedMatches
+    };
+  }
+
+  const warningMatches = getMatches(WARN_LANGUAGE);
+  if (warningMatches.length > 0) {
+    return {
+      severity: "warn",
+      matches: warningMatches
+    };
+  }
+
+  return {
+    severity: "clean",
+    matches: []
+  };
 }
 function highlightMissingIdeas(written, missingIdeas) {
   if (!written || !missingIdeas?.length) return written;
@@ -639,7 +685,9 @@ export default function ThinkOutLoudRecorder({
     if (!classId || !student) return;
     const combinedText = `${transcript} ${writtenResponse}`;
 
-    if (containsProfanity(combinedText)) {
+    const languageReview = analyzeLanguage(combinedText);
+
+    if (languageReview.severity === "block") {
       setError("Please revise your response to remove inappropriate language.");
       setStatusMessage("Inappropriate language detected.");
       setIsSubmitting(false);
@@ -650,11 +698,14 @@ export default function ThinkOutLoudRecorder({
         sessionId,
         transcript,
         writtenResponse,
+        matches: languageReview.matches,
         timestamp: Date.now()
       });
 
       await addDoc(collection(db, "classes", classId, "moderationEvents"), {
         type: "profanity_detected",
+        severity: languageReview.severity,
+        matches: languageReview.matches,
         studentId: student,
         studentName: student,
         classId,
@@ -666,6 +717,32 @@ export default function ThinkOutLoudRecorder({
 
       return;
     }
+
+    if (languageReview.severity === "warn") {
+      logClientEvent("language_warning_detected", {
+        studentId: student,
+        classId,
+        sessionId,
+        transcript,
+        writtenResponse,
+        matches: languageReview.matches,
+        timestamp: Date.now()
+      });
+
+      await addDoc(collection(db, "classes", classId, "moderationEvents"), {
+        type: "language_warning_detected",
+        severity: languageReview.severity,
+        matches: languageReview.matches,
+        studentId: student,
+        studentName: student,
+        classId,
+        sessionId,
+        transcript: transcript || "",
+        writtenResponse: writtenResponse || "",
+        createdAt: serverTimestamp()
+      });
+    }
+
     try {
       setError("");
       setIsSubmitting(true);
