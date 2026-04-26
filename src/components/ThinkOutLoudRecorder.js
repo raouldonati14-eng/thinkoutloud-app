@@ -110,68 +110,7 @@ const toMillis = (value) => {
 
   return null;
 };
-function getMissingIdeas(written, spoken) {
-  const clean = (text) =>
-    text
-      .toLowerCase()
-      .replace(/[^\w\s.]/g, "")
-      .split(".")
-      .map(s => s.trim())
-      .filter(Boolean);
 
-  const writtenSentences = clean(written);
-  const spokenText = spoken.toLowerCase();
-
-  return writtenSentences.filter(sentence => {
-    const words = sentence.split(/\s+/).filter(Boolean);
-    const matchCount = words.filter(w => new RegExp(`\\b${w}\\b`).test(spokenText)).length;
-
-    return matchCount < Math.ceil(words.length * 0.6);
-  });
-}
-
-function getIdeaCoverage(written, spoken) {
-  const clean = (text) =>
-    text
-      .toLowerCase()
-      .replace(/[^\w\s.]/g, "")
-      .split(".")
-      .map(s => s.trim())
-      .filter(Boolean);
-
-  const writtenSentences = clean(written);
-  const spokenText = spoken.toLowerCase();
-
-  let covered = 0;
-
-  writtenSentences.forEach(sentence => {
-    const words = sentence.split(/\s+/).filter(Boolean);
-    const matchCount = words.filter(w => new RegExp(`\\b${w}\\b`).test(spokenText)).length;
-
-    if (matchCount >= Math.ceil(words.length * 0.6)) {
-      covered++;
-    }
-  });
-
-  return {
-    covered,
-    total: writtenSentences.length
-  };
-}
-
-function generateIdeaFeedback(written, spoken) {
-  const missingIdeas = getMissingIdeas(written, spoken);
-
-  if (!written || missingIdeas.length === 0) {
-    return "You included all of your planned ideas in your response. Great job!";
-  }
-
-  if (missingIdeas.length === 1) {
-    return `You missed one key idea: "${missingIdeas[0]}". Try to include it next time.`;
-  }
-
-  return `You missed ${missingIdeas.length} key ideas. Focus on including all parts of your explanation.`;
-}
 function containsProfanity(text) {
   const badWords = [
     "damn", "hell", "shit", "fuck", "bitch", "ass",
@@ -185,6 +124,24 @@ function containsProfanity(text) {
   return badWords.some(word =>
     new RegExp(`\\b${word}\\b`, "i").test(clean)
   );
+}
+function highlightMissingIdeas(written, missingIdeas) {
+  if (!written || !missingIdeas?.length) return written;
+
+  let result = written;
+
+  missingIdeas.forEach((idea) => {
+    const safeIdea = idea.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // escape regex
+
+    const regex = new RegExp(`(${safeIdea})`, "gi");
+
+    result = result.replace(
+      regex,
+      `<span style="background:#fff3bf;padding:2px 4px;border-radius:4px;">$1</span>`
+    );
+  });
+
+  return result;
 }
 export default function ThinkOutLoudRecorder({
   student,
@@ -1153,17 +1110,40 @@ if (containsProfanity(combinedText)) {
           {transcript && (
             <div style={{ marginTop: 20 }}>
               <h3><T text="Your Response" lang={studentLanguage} /></h3>
-              <div dangerouslySetInnerHTML={{ __html: highlightReasoning(transcript) }} />
-            </div>
-          )}
+              <div
+  dangerouslySetInnerHTML={{
+    __html: highlightMissingIdeas(
+      writtenResponse,
+      responseData?.missingIdeas || []
+    )
+  }}
+/>
          {/* ── Written response ── */}
-          {writtenResponse && (
-            <div style={{ marginTop: 20 }}>
-              <h3><T text="Your Written Response" lang={studentLanguage} /></h3>
-              <div style={{ background: "#f8f9fa", padding: 14, borderRadius: 8, fontSize: 14, lineHeight: 1.6, border: "1px solid #e9ecef" }}>
-                {writtenResponse}
+         {writtenResponse && (
+  <div style={{ marginTop: 20 }}>
+    <h3><T text="Your Written Response" lang={studentLanguage} /></h3>
+    <div
+      style={{
+        background: "#f8f9fa",
+        padding: 14,
+        borderRadius: 8,
+        fontSize: 14,
+        lineHeight: 1.6,
+        border: "1px solid #e9ecef"
+      }}
+    >
+      <div
+        dangerouslySetInnerHTML={{
+          __html: highlightMissingIdeas(
+            writtenResponse,
+            responseData.missingIdeas
+          )
+        }}
+      />
+    </div>
+  </div>
+)}
               </div>
-            </div>
           )}
 
           {/* ── Spoken response ── */}
@@ -1225,7 +1205,7 @@ if (containsProfanity(combinedText)) {
         </div>
       )}
 
-      {/* ── Max attempts notice ── */}
+     {/* ── Max attempts notice ── */}
       {attempts.length >= maxAttempts && phase !== "feedback" && (
         <div style={{ marginTop: 16, color: "#555" }}>
           <T text="You have used all 3 attempts." lang={studentLanguage} />
