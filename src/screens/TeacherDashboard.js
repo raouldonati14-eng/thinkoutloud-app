@@ -61,8 +61,8 @@ const SUPPORTED_LANGUAGES = {
 export default function TeacherDashboard({ classId }) {
   const navigate = useNavigate();
   const [classData, setClassData] = useState(null);
-  const [responses, setResponses] = useState([]);
-  const [allResponses, setAllResponses] = useState([]);
+  const [responses, setResponses] = useState([]);// responses = current session
+  const [allResponses, setAllResponses] = useState([]);// allResponses = historical across sessions (used for gradebook/mastery)
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -128,17 +128,22 @@ export default function TeacherDashboard({ classId }) {
       where("sessionId", "==", sessionId)
     );
 
-    const unsubscribe = onSnapshot(responsesRef, (snapshot) => {
-      const list = snapshot.docs
-        .map((responseDoc) => ({ id: responseDoc.id, ...responseDoc.data() }))
-        .sort((a, b) => {
-          const aTime = a.updatedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
-          const bTime = b.updatedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
-          return bTime - aTime;
-        });
-      setResponses(list);
-    });
+    const unsubscribe = onSnapshot(
+  responsesRef,
+  (snapshot) => {
+    const list = snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .sort((a, b) => getTimestamp(b) - getTimestamp(a));
 
+    setResponses(list);
+  },
+  (error) => {
+    console.error("Error fetching responses:", error);
+  }
+);
     return () => unsubscribe();
   }, [classId, sessionId]);
 
@@ -153,14 +158,22 @@ export default function TeacherDashboard({ classId }) {
       where("classId", "==", classId)
     );
 
-    const unsubscribe = onSnapshot(allResponsesRef, (snapshot) => {
-      const list = snapshot.docs.map((responseDoc) => ({
-        id: responseDoc.id,
-        ...responseDoc.data()
-      }));
-      setAllResponses(list);
-    });
+    const unsubscribe = onSnapshot(
+  allResponsesRef,
+  (snapshot) => {
+    const list = snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .sort((a, b) => getTimestamp(b) - getTimestamp(a)); // optional but recommended
 
+    setAllResponses(list);
+  },
+  (error) => {
+    console.error("Error fetching all responses:", error);
+  }
+);
     return () => unsubscribe();
   }, [classId]);
 
@@ -285,11 +298,11 @@ export default function TeacherDashboard({ classId }) {
       if (!nextSessionId) {
         const newSessionRef = doc(collection(db, "classes", classId, "sessions"));
         await setDoc(newSessionRef, {
-          createdAt: Date.now(),
-          startedAt: Date.now(),
-          questionText: classData?.essentialQuestion || "",
-          category: classData?.category || "General"
-        });
+  createdAt: serverTimestamp(),
+  startedAt: serverTimestamp(),
+  questionText: classData?.essentialQuestion || "",
+  category: classData?.category || "General"
+});
         nextSessionId = newSessionRef.id;
       }
 

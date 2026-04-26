@@ -7,6 +7,7 @@ import {
   setDoc,
   updateDoc,
   collection,
+  addDoc,          // ✅ ADD THIS
   deleteDoc,
   onSnapshot,
   query,
@@ -712,21 +713,50 @@ if (containsProfanity(combinedText)) {
       }, 15000);
 
       // ✅ AI-powered scoring via Firebase Function
-     const scoreRes = await fetch(
-  "https://us-central1-think-out-loud-40d3a.cloudfunctions.net/scoreResponse",
-  {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      transcript: transcript || "",
-      writtenResponse: writtenResponse || "",
-      questionText,
-      category,
-      studentName: student,
-      studentLanguage: studentLanguage || "en"
-    })
-  }
-);
+    <button
+  onClick={async () => {
+    console.log("🔥 TEST BUTTON CLICKED");
+
+    const transcriptToUse =
+      "Bacteria spread through air and washing hands prevents infection.";
+
+    const scoreRes = await fetch(
+      "https://us-central1-think-out-loud-40d3a.cloudfunctions.net/scoreResponse",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript: transcriptToUse,
+          writtenResponse: "Bacteria spread through air.",
+          questionText: "Test question",
+          category: "Disease",
+          studentName: "Test Student",
+          studentLanguage: "en"
+        })
+      }
+    );
+
+    const responseData = await scoreRes.json();
+
+    console.log("🔥 GPT RESPONSE:", responseData);
+
+    await addDoc(collection(db, "responses"), {
+      studentId: "test",
+      classId,
+      sessionId,
+      score: responseData.score,
+      missingIdeas: responseData.missingIdeas || [],
+      ideaCoverage: responseData.ideaCoverage || {},
+      transcript: transcriptToUse,
+      writtenResponse: "Bacteria spread through air.",
+      createdAt: serverTimestamp()
+    });
+
+    console.log("🔥 SAVED TO FIRESTORE");
+  }}
+>
+  TEST SAVE
+</button>
 
       if (!scoreRes.ok) {
         throw new Error(`Scoring request failed with status ${scoreRes.status}`);

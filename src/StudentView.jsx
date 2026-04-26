@@ -14,7 +14,7 @@ import EssentialQuestionScreen from "./screens/EssentialQuestionScreen";
 import { logClientEvent } from "./utils/logEvent";
 import { useRecordingState } from "./utils/useRecordingState";
 import { SUPPORTED_LANGUAGES, translateMany } from "./utils/translate";
-
+import DebugPanel from "./components/DebugPanel"; // adjust path if needed
 const STUDENT_PROFILE_STORAGE_KEY = "tol:student-profile";
 
 export default function StudentView() {
@@ -608,6 +608,13 @@ export default function StudentView() {
 
         {/* NORMAL PHASE */}
         {!makeupData && !makeupStarted && renderPhase()}
+       {process.env.NODE_ENV !== "production" && (
+  <DebugPanel
+    user={{ role: "student", name: student }}
+    classPhase={classData?.classPhase}
+    questionOpen={classData?.questionOpen}
+  />
+)}
       </div>
     </div>
   );
