@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import WaveSurfer from "wavesurfer.js";
 import { audioRepository } from "../data/audioRepository";
 import { db } from "../firebase";
@@ -611,7 +611,7 @@ export default function ThinkOutLoudRecorder({
     }
   };
 
-  const stopRecording = useCallback(async () => {
+  const stopRecording = async () => {
     setStatusMessage("Finishing recording...");
     mediaRecorderRef.current?.stop();
     try {
@@ -627,12 +627,7 @@ export default function ThinkOutLoudRecorder({
     } catch (err) {
       console.error("Recording cleanup error:", err);
     }
-  }, [classId, sessionId, student, timer]);
-
-  useEffect(() => {
-    if (!recording || timer < MAX_RECORDING_TIME) return;
-    stopRecording();
-  }, [recording, stopRecording, timer]);
+  };
 
   const finalizeResponse = async () => {
     if (isSubmitting || recording) return;
@@ -868,7 +863,7 @@ export default function ThinkOutLoudRecorder({
           )}
           {timer >= MAX_RECORDING_TIME && (
             <span style={{ fontSize: 13, fontWeight: 400, color: "#2f9e44", marginLeft: 8 }}>
-              Time limit reached.
+              ✓ Minimum reached — stop when ready
             </span>
           )}
           <div style={{ marginTop: 6, height: 6, borderRadius: 3, background: "#e9ecef", overflow: "hidden" }}>
