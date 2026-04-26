@@ -249,6 +249,7 @@ Respond ONLY with valid JSON in this exact format:
     "total": 0
   },
   "missingIdeas": ["brief description of each idea from written notes not expressed in spoken response"],
+  "coveredIdeas": ["brief description of each idea from written notes that was expressed in spoken response"],
   "ideaFeedback": "1 sentence in ${langName} about which ideas were covered well and which were missing. Empty string if no written notes provided."
 }
 `;
@@ -286,6 +287,7 @@ console.log("✅ PARSED GPT OUTPUT:", parsed);
         vocabularyUsed: Array.isArray(parsed.vocabularyUsed) ? parsed.vocabularyUsed : [],
         ideaCoverage: parsed.ideaCoverage || null,
         missingIdeas: Array.isArray(parsed.missingIdeas) ? parsed.missingIdeas : [],
+        coveredIdeas: Array.isArray(parsed.coveredIdeas) ? parsed.coveredIdeas : [],
         ideaFeedback: parsed.ideaFeedback || ""
       });
     } catch (err) {
@@ -294,7 +296,11 @@ console.log("✅ PARSED GPT OUTPUT:", parsed);
         score: 1,
         feedback: "We could not generate feedback for this response. Please try again.",
         analysis: "Scoring failed due to an error.",
-        vocabularyUsed: []
+        vocabularyUsed: [],
+        ideaCoverage: null,
+        missingIdeas: [],
+        coveredIdeas: [],
+        ideaFeedback: ""
       });
     }
   }

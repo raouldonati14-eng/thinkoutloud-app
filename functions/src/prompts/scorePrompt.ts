@@ -26,6 +26,7 @@ Return JSON with:
 - missingIdeas (array of strings)
 - coveredIdeas (array of strings)
 - ideaFeedback (1–2 sentence summary of gaps)
+- Return valid JSON only with no markdown wrapper
 `;
 
 export function buildUserPrompt({

@@ -6,6 +6,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  serverTimestamp,
   setDoc,
   where
 } from "firebase/firestore";
@@ -225,7 +226,7 @@ export default function StudentView() {
       db, "classes", selectedClassId, "roster",
       student.replace(/\s+/g, "_")
     );
-    setDoc(rosterRef, { name: student, joinedAt: Date.now() }, { merge: true });
+    setDoc(rosterRef, { name: student, joinedAt: serverTimestamp() }, { merge: true });
   }, [selectedClassId, student]);
 
   // 🔥 JOIN

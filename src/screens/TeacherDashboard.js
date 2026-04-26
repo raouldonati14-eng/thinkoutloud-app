@@ -58,6 +58,16 @@ const SUPPORTED_LANGUAGES = {
   it: "Italian"
 };
 
+const getTimestamp = (item) => {
+  const ts = item?.updatedAt || item?.completedAt || item?.createdAt;
+
+  if (!ts) return 0;
+  if (typeof ts.toMillis === "function") return ts.toMillis();
+  if (typeof ts === "number") return ts;
+
+  return 0;
+};
+
 export default function TeacherDashboard({ classId }) {
   const navigate = useNavigate();
   const [classData, setClassData] = useState(null);
@@ -88,12 +98,18 @@ export default function TeacherDashboard({ classId }) {
     if (!classId) return;
 
     const classRef = doc(db, "classes", classId);
-    const unsubscribe = onSnapshot(classRef, (snapshot) => {
-      if (!snapshot.exists()) return;
-      const nextData = snapshot.data();
-      setClassData(nextData);
-      setTeacherLanguage(nextData?.teacherLanguage || "en");
-    });
+    const unsubscribe = onSnapshot(
+      classRef,
+      (snapshot) => {
+        if (!snapshot.exists()) return;
+        const nextData = snapshot.data();
+        setClassData(nextData);
+        setTeacherLanguage(nextData?.teacherLanguage || "en");
+      },
+      (error) => {
+        console.error("Firestore listener error:", error);
+      }
+    );
 
     return () => unsubscribe();
   }, [classId]);
@@ -102,16 +118,22 @@ export default function TeacherDashboard({ classId }) {
     if (!classId) return;
     const sessionsRef = collection(db, "classes", classId, "sessions");
 
-    const unsubscribe = onSnapshot(sessionsRef, (snapshot) => {
-      const list = snapshot.docs
-        .map((sessionDoc) => ({ id: sessionDoc.id, ...sessionDoc.data() }))
-        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      setSessions(list);
+    const unsubscribe = onSnapshot(
+      sessionsRef,
+      (snapshot) => {
+        const list = snapshot.docs
+          .map((sessionDoc) => ({ id: sessionDoc.id, ...sessionDoc.data() }))
+          .sort((a, b) => getTimestamp(b) - getTimestamp(a));
+        setSessions(list);
 
-      if (!selectedSession && list.length > 0) {
-        setSelectedSession(list[0].id);
+        if (!selectedSession && list.length > 0) {
+          setSelectedSession(list[0].id);
+        }
+      },
+      (error) => {
+        console.error("Firestore listener error:", error);
       }
-    });
+    );
 
     return () => unsubscribe();
   }, [classId, selectedSession]);
@@ -192,9 +214,15 @@ export default function TeacherDashboard({ classId }) {
       "intelligence",
       "prompts"
     );
-    const unsubscribe = onSnapshot(promptsRef, (snapshot) => {
-      setPrompts(snapshot.exists() ? snapshot.data()?.prompts || [] : []);
-    });
+    const unsubscribe = onSnapshot(
+      promptsRef,
+      (snapshot) => {
+        setPrompts(snapshot.exists() ? snapshot.data()?.prompts || [] : []);
+      },
+      (error) => {
+        console.error("Firestore listener error:", error);
+      }
+    );
 
     return () => unsubscribe();
   }, [classId, sessionId]);
@@ -202,26 +230,38 @@ export default function TeacherDashboard({ classId }) {
   useEffect(() => {
     if (!classId) return;
     const rosterRef = collection(db, "classes", classId, "roster");
-    const unsubscribe = onSnapshot(rosterRef, (snapshot) => {
-      setRoster(snapshot.docs.map((rosterDoc) => ({ id: rosterDoc.id, ...rosterDoc.data() })));
-    });
+    const unsubscribe = onSnapshot(
+      rosterRef,
+      (snapshot) => {
+        setRoster(snapshot.docs.map((rosterDoc) => ({ id: rosterDoc.id, ...rosterDoc.data() })));
+      },
+      (error) => {
+        console.error("Firestore listener error:", error);
+      }
+    );
     return () => unsubscribe();
   }, [classId]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "questions"), (snapshot) => {
-      const firestoreQuestions = snapshot.docs.map((questionDoc) => ({
-        id: questionDoc.id,
-        ...questionDoc.data()
-      }));
-      const merged = [
-        ...firestoreQuestions,
-        ...questionsData.filter(
-          (question) => !firestoreQuestions.some((saved) => saved.text === question.text)
-        )
-      ];
-      setLibraryQuestions(merged);
-    });
+    const unsubscribe = onSnapshot(
+      collection(db, "questions"),
+      (snapshot) => {
+        const firestoreQuestions = snapshot.docs.map((questionDoc) => ({
+          id: questionDoc.id,
+          ...questionDoc.data()
+        }));
+        const merged = [
+          ...firestoreQuestions,
+          ...questionsData.filter(
+            (question) => !firestoreQuestions.some((saved) => saved.text === question.text)
+          )
+        ];
+        setLibraryQuestions(merged);
+      },
+      (error) => {
+        console.error("Firestore listener error:", error);
+      }
+    );
 
     return () => unsubscribe();
   }, []);
@@ -417,9 +457,9 @@ export default function TeacherDashboard({ classId }) {
 
     const newSessionRef = doc(collection(db, "classes", classId, "sessions"));
     await setDoc(newSessionRef, {
-      createdAt: Date.now(),
-      startedAt: Date.now(),
-      restartedAt: Date.now(),
+      createdAt: serverTimestamp(),
+      startedAt: serverTimestamp(),
+      restartedAt: serverTimestamp(),
       questionText: questionIdentity.text,
       category: classData?.category || "General"
     });
@@ -477,7 +517,7 @@ export default function TeacherDashboard({ classId }) {
       discussionPrompts: promptsForMakeup.discussionPrompts,
       reflectionPrompts: promptsForMakeup.reflectionPrompts,
       assignedTo: makeupStudents,
-      assignedAt: Date.now(),
+      assignedAt: serverTimestamp(),
       open: true
     });
 

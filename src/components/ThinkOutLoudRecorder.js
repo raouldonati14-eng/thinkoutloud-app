@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import WaveSurfer from "wavesurfer.js";
 import { audioRepository } from "../data/audioRepository";
 import { db } from "../firebase";
@@ -98,6 +98,10 @@ const secondaryButtonStyle = {
   fontWeight: 700,
   cursor: "pointer"
 };
+
+const SCORE_RESPONSE_URL =
+  process.env.REACT_APP_SCORE_RESPONSE_URL ||
+  "https://us-central1-think-out-loud-40d3a.cloudfunctions.net/scoreResponse";
 
 const toMillis = (value) => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -583,7 +587,7 @@ export default function ThinkOutLoudRecorder({
 
       await setDoc(
         doc(db, "classes", classId, "sessions", sessionId, "recording", student),
-        { student, startedAt: Date.now() }
+        { student, startedAt: serverTimestamp() }
       );
       logClientEvent("student_recording_started", {
         classId,
@@ -607,7 +611,7 @@ export default function ThinkOutLoudRecorder({
     }
   };
 
-  const stopRecording = async () => {
+  const stopRecording = useCallback(async () => {
     setStatusMessage("Finishing recording...");
     mediaRecorderRef.current?.stop();
     try {
@@ -623,7 +627,12 @@ export default function ThinkOutLoudRecorder({
     } catch (err) {
       console.error("Recording cleanup error:", err);
     }
-  };
+  }, [classId, sessionId, student, timer]);
+
+  useEffect(() => {
+    if (!recording || timer < MAX_RECORDING_TIME) return;
+    stopRecording();
+  }, [recording, stopRecording, timer]);
 
   const finalizeResponse = async () => {
     if (isSubmitting || recording) return;
@@ -635,22 +644,33 @@ export default function ThinkOutLoudRecorder({
     if (!classId || !student) return;
     const combinedText = `${transcript} ${writtenResponse}`;
 
-if (containsProfanity(combinedText)) {
-  setError("Please revise your response to remove inappropriate language.");
-  setStatusMessage("Inappropriate language detected.");
-  setIsSubmitting(false);
+    if (containsProfanity(combinedText)) {
+      setError("Please revise your response to remove inappropriate language.");
+      setStatusMessage("Inappropriate language detected.");
+      setIsSubmitting(false);
 
-  logClientEvent("profanity_detected", {
-    studentId: student,
-    classId,
-    sessionId,
-    transcript,
-    writtenResponse,
-    timestamp: Date.now()
-  });
+      logClientEvent("profanity_detected", {
+        studentId: student,
+        classId,
+        sessionId,
+        transcript,
+        writtenResponse,
+        timestamp: Date.now()
+      });
 
-  return;
-}
+      await addDoc(collection(db, "classes", classId, "moderationEvents"), {
+        type: "profanity_detected",
+        studentId: student,
+        studentName: student,
+        classId,
+        sessionId,
+        transcript: transcript || "",
+        writtenResponse: writtenResponse || "",
+        createdAt: serverTimestamp()
+      });
+
+      return;
+    }
     try {
       setError("");
       setIsSubmitting(true);
@@ -687,6 +707,7 @@ if (containsProfanity(combinedText)) {
         transcript: transcript || "",
         writtenResponse: writtenResponse || "",
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         status: "processing"
       });
       logClientEvent("student_response_saved_for_scoring", {
@@ -712,51 +733,18 @@ if (containsProfanity(combinedText)) {
         });
       }, 15000);
 
-      // ✅ AI-powered scoring via Firebase Function
-    <button
-  onClick={async () => {
-    console.log("🔥 TEST BUTTON CLICKED");
-
-    const transcriptToUse =
-      "Bacteria spread through air and washing hands prevents infection.";
-
-    const scoreRes = await fetch(
-      "https://us-central1-think-out-loud-40d3a.cloudfunctions.net/scoreResponse",
-      {
+      const scoreRes = await fetch(SCORE_RESPONSE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          transcript: transcriptToUse,
-          writtenResponse: "Bacteria spread through air.",
-          questionText: "Test question",
-          category: "Disease",
-          studentName: "Test Student",
-          studentLanguage: "en"
+          transcript: transcript || "",
+          writtenResponse: writtenResponse || "",
+          questionText: questionText || "",
+          category: category || "Health",
+          studentName: student,
+          studentLanguage: studentLanguage || "en"
         })
-      }
-    );
-
-    const responseData = await scoreRes.json();
-
-    console.log("🔥 GPT RESPONSE:", responseData);
-
-    await addDoc(collection(db, "responses"), {
-      studentId: "test",
-      classId,
-      sessionId,
-      score: responseData.score,
-      missingIdeas: responseData.missingIdeas || [],
-      ideaCoverage: responseData.ideaCoverage || {},
-      transcript: transcriptToUse,
-      writtenResponse: "Bacteria spread through air.",
-      createdAt: serverTimestamp()
-    });
-
-    console.log("🔥 SAVED TO FIRESTORE");
-  }}
->
-  TEST SAVE
-</button>
+      });
 
       if (!scoreRes.ok) {
         throw new Error(`Scoring request failed with status ${scoreRes.status}`);
@@ -771,16 +759,18 @@ if (containsProfanity(combinedText)) {
       setTimeout(async () => {
         try {
          await updateDoc(responseRef, {
-  status: "complete",
-  score: assessment.score,
-  feedback: assessment.feedback,
-  analysis: assessment.analysis,
-  vocabularyUsed: assessment.vocabularyUsed || [],
-  ideaCoverage: assessment.ideaCoverage || null,
-  missingIdeas: assessment.missingIdeas || [],
-  ideaFeedback: assessment.ideaFeedback || "",
-  completedAt: serverTimestamp()
-});
+            status: "complete",
+            score: assessment.score,
+            feedback: assessment.feedback,
+            analysis: assessment.analysis,
+            vocabularyUsed: assessment.vocabularyUsed || [],
+            ideaCoverage: assessment.ideaCoverage || null,
+            missingIdeas: assessment.missingIdeas || [],
+            coveredIdeas: assessment.coveredIdeas || [],
+            ideaFeedback: assessment.ideaFeedback || "",
+            completedAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
           logClientEvent("student_response_scored", {
             classId,
             sessionId,
@@ -873,12 +863,12 @@ if (containsProfanity(combinedText)) {
           {Math.floor(timer / 60)}:{(timer % 60).toString().padStart(2, "0")}
           {timer < MAX_RECORDING_TIME && (
             <span style={{ fontSize: 13, fontWeight: 400, color: "#868e96", marginLeft: 8 }}>
-              ({MAX_RECORDING_TIME - timer}s until minimum)
+              ({MAX_RECORDING_TIME - timer}s remaining)
             </span>
           )}
           {timer >= MAX_RECORDING_TIME && (
             <span style={{ fontSize: 13, fontWeight: 400, color: "#2f9e44", marginLeft: 8 }}>
-              ✓ Minimum reached — stop when ready
+              Time limit reached.
             </span>
           )}
           <div style={{ marginTop: 6, height: 6, borderRadius: 3, background: "#e9ecef", overflow: "hidden" }}>
@@ -910,7 +900,7 @@ if (containsProfanity(combinedText)) {
 
       {/* ── Stop button (before minimum) ── */}
       {recording && timer < MAX_RECORDING_TIME && (
-        <button onClick={stopRecording} style={{ opacity: 0.6 }}>
+        <button onClick={stopRecording} style={secondaryButtonStyle}>
           <T text="Stop" lang={studentLanguage} />
         </button>
       )}
@@ -925,7 +915,7 @@ if (containsProfanity(combinedText)) {
             boxShadow: "0 12px 24px rgba(47, 158, 68, 0.22)"
           }}
         >
-          <T text="Stop & Submit" lang={studentLanguage} />
+          <T text="Stop" lang={studentLanguage} />
         </button>
       )}
 

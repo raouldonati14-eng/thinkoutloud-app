@@ -22,7 +22,7 @@ export const SUPPORTED_LANGUAGES = {
 
 const TRANSLATE_URL =
   process.env.REACT_APP_TRANSLATE_API_URL ||
-  "https://thinkoutloud-app.vercel.app/api/translate";
+  "/api/translate";
 
 const cache = {};
 
