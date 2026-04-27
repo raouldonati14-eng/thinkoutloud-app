@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { db, auth } from "../../firebasease";
-import { collection, addDoc, doc, setDoc } from "firebase/firestore";
+import { auth } from "../../firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { createClassWithCode } from "../../utils/createClassWithCode";
 
 export default function ClassManager() {
 
@@ -17,10 +17,6 @@ export default function ClassManager() {
     return () => unsub();
   }, []);
 
-  const generateCode = () => {
-    return Math.random().toString(36).substring(2, 7).toUpperCase();
-  };
-
   const createClass = async () => {
 
     if (!user) {
@@ -34,34 +30,15 @@ export default function ClassManager() {
     }
 
     try {
-
-      const code = generateCode();
-
-      console.log("GENERATED CODE:", code);
       console.log("AUTH USER:", user);
 
-      const classRef = await addDoc(collection(db, "classes"), {
-        className: className,
+      const { classId, joinCode: code } = await createClassWithCode({
+        className: className.trim(),
         teacherId: user.uid,
-        joinCode: code,
-        createdAt: Date.now(),
-        classPhase: "instruction",
-        questionOpen: false,
-
-        // ✅ Initialize required fields to avoid undefined bugs
-        category: null,
-        currentLesson: null,
-        currentQuestion: null,
-        activeSessionId: null
+        teacherName: user.displayName || user.email || "Teacher"
       });
 
-      console.log("CLASS CREATED:", classRef.id);
-
-      await setDoc(doc(db, "joinCodes", code), {
-        classId: classRef.id
-      });
-
-      console.log("JOIN CODE SAVED");
+      console.log("CLASS CREATED:", classId);
 
       setJoinCode(code);
 

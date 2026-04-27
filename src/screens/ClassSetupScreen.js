@@ -1,47 +1,25 @@
 import React, { useState } from "react";
-import {
-  collection,
-  addDoc,
-  doc,
-  getDoc,
-  serverTimestamp,
-  setDoc
-} from "firebase/firestore";
-import { db, auth } from "../firebase";
+import { auth } from "../firebase";
+import { createClassWithCode } from "../utils/createClassWithCode";
 
 export default function ClassSetupScreen({ roleData }) {
   const [className, setClassName] = useState("");
   const [creating, setCreating] = useState(false);
-
-  const generateUniqueCode = async () => {
-    let code = "";
-
-    do {
-      code = Math.random().toString(36).substring(2, 7).toUpperCase();
-    } while ((await getDoc(doc(db, "joinCodes", code))).exists());
-
-    return code;
-  };
 
   const handleCreate = async () => {
     if (!className.trim()) return;
 
     setCreating(true);
 
-    const joinCode = await generateUniqueCode();
-
-    const classRef = await addDoc(collection(db, "classes"), {
+    await createClassWithCode({
       className: className.trim(),
       teacherId: auth.currentUser.uid,
+      teacherName:
+        auth.currentUser?.displayName ||
+        auth.currentUser?.email ||
+        "Teacher",
       schoolId: roleData.schoolId,
-      districtId: roleData.districtId,
-      joinCode,
-      active: true,
-      createdAt: serverTimestamp()
-    });
-
-    await setDoc(doc(db, "joinCodes", joinCode), {
-      classId: classRef.id
+      districtId: roleData.districtId
     });
 
     setClassName("");

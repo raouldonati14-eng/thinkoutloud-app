@@ -5,9 +5,8 @@ import {
   where,
   onSnapshot,
   doc,
-  getDoc,
   setDoc,
-  addDoc
+  serverTimestamp
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import {
@@ -20,6 +19,7 @@ import {
 } from "recharts";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import QuestionManager from "./QuestionManager";
+import { createClassWithCode } from "../utils/createClassWithCode";
 
 export default function AdminDashboard({ roleData }) {
   console.log("ROLE DATA:", roleData);
@@ -43,7 +43,7 @@ export default function AdminDashboard({ roleData }) {
       await setDoc(doc(db, "teachers", cred.user.uid), {
         email: newTeacherEmail,
         schoolId: roleData.schoolId,
-        createdAt: new Date(),
+        createdAt: serverTimestamp(),
         classes: []
       });
 
@@ -59,23 +59,11 @@ export default function AdminDashboard({ roleData }) {
   /* ================= CREATE CLASS ================= */
   const handleCreateClass = async () => {
     try {
-      let joinCode = "";
-
-      do {
-        joinCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-      } while ((await getDoc(doc(db, "joinCodes", joinCode))).exists());
-
-      const classRef = await addDoc(collection(db, "classes"), {
-        className: newClassName,
+      await createClassWithCode({
+        className: newClassName.trim(),
         schoolId: roleData.schoolId,
         teacherId: null,
-        joinCode,
-        active: true,
-        createdAt: new Date()
-      });
-
-      await setDoc(doc(db, "joinCodes", joinCode), {
-        classId: classRef.id
+        teacherName: null
       });
 
       alert("Class created!");

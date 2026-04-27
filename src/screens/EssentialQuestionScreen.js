@@ -58,6 +58,7 @@ export default function EssentialQuestionScreen({
   classCode,
   classId,
   student,
+  studentKey,
   classData,
   translatedQuestion,
   studentLanguage = "en",
@@ -242,6 +243,7 @@ export default function EssentialQuestionScreen({
 
       <ThinkOutLoudRecorder
         student={student?.name || student}
+        studentKey={studentKey}
         questionId={identity.title || classData?.activeSessionId || null}
         questionText={questionText}
         category={classData?.category}

@@ -22,6 +22,23 @@
   { "category": "Nutrition", "lesson": 6, "text": "What are eating disorders, and how can they affect physical and mental health? Describe possible causes and explain why getting help is important for recovery." },
   { "category": "Disease", "lesson": 1, "text": "In this lesson, you learned how the immune system fights pathogens. Imagine that a virus enters the body. Describe how the immune system would respond, including the roles of T-cells and B-cells. Use details from the lesson to support your answer." },
   { "category": "Disease", "lesson": 2, "text": "Bacteria, fungi, protozoa, and viruses can all cause disease. Choose two of these and explain how each one spreads and one way people can prevent infection from each." },
+  {
+    "category": "Disease",
+    "lesson": 6,
+    "text": "Choose one communicable disease and explain how it spreads. Then explain one way to prevent it and how that prevention helps stop the spread.",
+    "discussionPrompts": [
+      "Which communicable disease would give the clearest answer to this question, and why?",
+      "What details make the explanation of how the disease spreads more scientifically accurate?",
+      "How can a student clearly connect the prevention method to stopping the spread, not just avoiding illness?",
+      "What vocabulary words should appear in a strong response, such as droplets, infection, transmission, immune system, or vaccine?"
+    ],
+    "reflectionPrompts": [
+      "Did your response clearly explain both how the disease spreads and how prevention interrupts that spread?",
+      "What scientific detail could you add to make your explanation more complete or accurate?",
+      "Which vocabulary word strengthened your response the most, and how did you use it?",
+      "If you answered again, what would you say more clearly out loud to earn a stronger score?"
+    ]
+  },
   { "category": "Disease", "lesson": 3, "text": "Why might HIV infection rates be higher in some developing countries than in developed countries? Use examples such as access to healthcare, education, or treatment to support your explanation." },
   { "category": "Disease", "lesson": 4, "text": "Cancer happens when cells grow out of control. Explain how one lifestyle choice, such as smoking, too much UV exposure, or poor diet, can increase the risk of cancer, and describe one way a person can reduce that risk." },
   { "category": "Disease", "lesson": 5, "text": "Based on the lesson on heart disease prevention, what are two actions people can take in everyday life to lower their risk of heart disease?" },

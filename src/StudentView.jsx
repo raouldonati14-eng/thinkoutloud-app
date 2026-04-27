@@ -18,6 +18,14 @@ import { SUPPORTED_LANGUAGES, translateMany } from "./utils/translate";
 import DebugPanel from "./components/DebugPanel"; // adjust path if needed
 const STUDENT_PROFILE_STORAGE_KEY = "tol:student-profile";
 
+const generateStudentKey = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `student-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 export default function StudentView() {
   const [classData, setClassData] = useState(null);
   const [classLoaded, setClassLoaded] = useState(false);
@@ -26,6 +34,7 @@ export default function StudentView() {
   const [lastName, setLastName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [student, setStudent] = useState(null);
+  const [studentKey, setStudentKey] = useState(null);
   const [studentStarted, setStudentStarted] = useState(false);
   const { recordingState, timeLeft } = useRecordingState(classData || {});
   const [language, setLanguage] = useState("en");
@@ -74,6 +83,7 @@ export default function StudentView() {
       setLastName(parsed.lastName || "");
       setFirstName(parsed.firstName || "");
       setStudent(parsed.student || null);
+      setStudentKey(parsed.studentKey || generateStudentKey());
       setLanguage(parsed.language || "en");
     } catch (error) {
       console.error("Could not restore student profile", error);
@@ -91,10 +101,11 @@ export default function StudentView() {
         lastName,
         firstName,
         student,
+        studentKey,
         language
       })
     );
-  }, [firstName, joinCode, language, lastName, selectedClassId, student]);
+  }, [firstName, joinCode, language, lastName, selectedClassId, student, studentKey]);
 
   // 🌐 RE-TRANSLATE UI WHEN LANGUAGE CHANGES
   useEffect(() => {
@@ -221,13 +232,23 @@ export default function StudentView() {
 
   // 🔥 ROSTER SAVE
   useEffect(() => {
-    if (!selectedClassId || !student) return;
+    if (!selectedClassId || !student || !studentKey) return;
     const rosterRef = doc(
       db, "classes", selectedClassId, "roster",
-      student.replace(/\s+/g, "_")
+      studentKey
     );
-    setDoc(rosterRef, { name: student, joinedAt: serverTimestamp() }, { merge: true });
-  }, [selectedClassId, student]);
+    setDoc(
+      rosterRef,
+      {
+        name: student,
+        studentKey,
+        joinCode: joinCode.replace(/\s+/g, "").trim().toUpperCase(),
+        joinedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  }, [joinCode, selectedClassId, student, studentKey]);
 
   // 🔥 JOIN
   const capitalize = (str) =>
@@ -275,12 +296,14 @@ export default function StudentView() {
       }
 
       const formattedName = `${capitalize(lastName)}, ${capitalize(firstName)}`;
+      const nextStudentKey = studentKey || generateStudentKey();
 
       setStudentStarted(false);
       setClassData(null);
       setClassLoaded(false);
       setSelectedClassId(classId);
       setStudent(formattedName);
+      setStudentKey(nextStudentKey);
       setJoinStatus("Connected. Waiting for class data...");
       logClientEvent("student_join_succeeded", {
         classId,
@@ -398,11 +421,12 @@ export default function StudentView() {
                   classCode={joinCode}
                   classId={selectedClassId}
                   student={student}
-                  classData={classData}
-                  language={language}
-                  studentLanguage={language}
-                  translatedQuestion={t("essentialQuestion")}
-                />
+            classData={classData}
+            language={language}
+            studentLanguage={language}
+            studentKey={studentKey}
+            translatedQuestion={t("essentialQuestion")}
+          />
               </>
             )}
           </div>
@@ -593,6 +617,7 @@ export default function StudentView() {
             classCode={joinCode}
             classId={selectedClassId}
             student={student}
+            studentKey={studentKey}
             language={language}
             studentLanguage={language}
             translatedQuestion={t("essentialQuestion")}

@@ -7,6 +7,39 @@ admin.initializeApp();
 
 const db = admin.firestore();
 
+const getMeaningfulWordCount = (text = "") =>
+  text
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^\p{L}\p{N}']/gu, ""))
+    .filter((word) => word.length >= 2).length;
+
+const getSpokenEvidenceCap = (transcript = "") => {
+  const spokenWordCount = getMeaningfulWordCount(transcript);
+
+  if (spokenWordCount < 8) {
+    return {
+      maxScore: 1,
+      spokenWordCount,
+      reason: "There is not enough spoken evidence to score this as an oral response."
+    };
+  }
+
+  if (spokenWordCount < 20) {
+    return {
+      maxScore: 2,
+      spokenWordCount,
+      reason: "The spoken response is present but still too limited for full oral proficiency."
+    };
+  }
+
+  return {
+    maxScore: 3,
+    spokenWordCount,
+    reason: ""
+  };
+};
+
 /* ================= FEEDBACK FUNCTION ================= */
 const generateFeedback = (score: number, transcript: string) => {
   if (!transcript) return "Try explaining your thinking more clearly.";
@@ -214,15 +247,18 @@ export const scoreResponse = onRequest(
     const langName = langNames[studentLanguage] || "English";
     const responseText = transcript || writtenResponse || "";
     const writtenText = writtenResponse || "";
+    const spokenEvidence = getSpokenEvidenceCap(transcript || "");
 
     const systemPrompt = `
 You are an expert health education teacher scoring a 9th grade student's spoken response.
 
 IMPORTANT RULES:
 - If the response contains profanity, slurs, or inappropriate language, assign score 1 regardless of content quality. Note this clearly in the feedback and analysis.
-- If the spoken transcript appears garbled, nonsensical, or does not match the topic, prioritize the written notes for scoring instead.
+- This is an ORAL LANGUAGE task. Writing may help with idea analysis and coaching, but it cannot replace speaking for the final score.
+- If the spoken transcript appears garbled, nonsensical, or does not match the topic, do NOT use the written notes as a substitute for a high score. Score the oral evidence that is actually present.
 - If both spoken and written responses are off-topic or empty, assign score 1.
 - Score based on MEANING and UNDERSTANDING, not just keyword matching.
+- A student may only earn a 3 if the spoken transcript itself contains enough clear, on-topic evidence.
 
 RUBRIC:
 - Score 3 (Proficient): Response is complete (35+ words, 2+ sentences), uses 3+ lesson vocabulary terms accurately, AND includes 2+ reasoning signals with content (because, therefore, this leads to, as a result, for example, etc.). The student clearly connects ideas with evidence.
@@ -236,7 +272,10 @@ STUDENT NAME: ${studentName || "The student"}
 IDEA ANALYSIS INSTRUCTIONS:
 If the student provided written notes, extract the key ideas from those notes (each distinct claim or explanation counts as one idea). Then check which of those ideas actually appeared in the spoken response. An idea is "covered" if the spoken response expresses the same meaning, even in different words.
 
-SCORING NOTE: If the spoken transcript looks garbled or off-topic compared to the written notes, weight the written notes more heavily for scoring.
+SCORING NOTE:
+- Use written notes to understand intended ideas and to generate feedback.
+- Do not award a high score just because the writing is strong.
+- The score must reflect the strength of the spoken response.
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -280,10 +319,19 @@ const clean = raw
 
 const parsed = JSON.parse(clean);
 console.log("✅ PARSED GPT OUTPUT:", parsed);
+      const rawScore = Math.min(3, Math.max(1, Number(parsed.score) || 1));
+      const finalScore = Math.min(rawScore, spokenEvidence.maxScore);
+      const cappedForSpeaking = finalScore !== rawScore;
+      const adjustedFeedback = cappedForSpeaking
+        ? `${parsed.feedback || "You showed good thinking in your planning."} To earn full credit, you need to say your ideas aloud with enough detail.`
+        : parsed.feedback || "Good effort. Keep practicing.";
+      const adjustedAnalysis = cappedForSpeaking
+        ? `${parsed.analysis || ""} Score capped at ${spokenEvidence.maxScore} because the spoken response only included ${spokenEvidence.spokenWordCount} meaningful words. Writing was used for idea analysis, but oral evidence is required for full credit.`.trim()
+        : parsed.analysis || "";
       res.json({
-        score: Math.min(3, Math.max(1, Number(parsed.score) || 1)),
-        feedback: parsed.feedback || "Good effort. Keep practicing.",
-        analysis: parsed.analysis || "",
+        score: finalScore,
+        feedback: adjustedFeedback,
+        analysis: adjustedAnalysis,
         vocabularyUsed: Array.isArray(parsed.vocabularyUsed) ? parsed.vocabularyUsed : [],
         ideaCoverage: parsed.ideaCoverage || null,
         missingIdeas: Array.isArray(parsed.missingIdeas) ? parsed.missingIdeas : [],

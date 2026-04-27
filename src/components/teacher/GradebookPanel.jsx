@@ -28,6 +28,10 @@ function csvEscape(value) {
 export default function GradebookPanel({
   responses = [],
   sessions = [],
+  className = "ThinkOutLoud Class",
+  analytics = null,
+  roster = [],
+  studentNotes = [],
   onDeleteResponse
 }) {
   const [studentFilter, setStudentFilter] = useState("");
@@ -105,6 +109,14 @@ export default function GradebookPanel({
     return Array.from(new Set(grouped.map((entry) => entry.category))).sort();
   }, [grouped]);
 
+  const notesLookup = useMemo(() => {
+    return studentNotes.reduce((map, noteRow) => {
+      if (noteRow.studentKey) map[noteRow.studentKey] = noteRow;
+      if (noteRow.studentName) map[noteRow.studentName] = noteRow;
+      return map;
+    }, {});
+  }, [studentNotes]);
+
   const filtered = useMemo(() => {
     return grouped.filter((entry) => {
       const matchesStudent =
@@ -137,24 +149,32 @@ export default function GradebookPanel({
       "Latest Score",
       "Attempts",
       "Makeup",
-      "Last Submitted"
+      "Last Submitted",
+      "Follow-Up",
+      "Teacher Note"
     ];
 
-    const rows = filtered.map((entry) => [
-      entry.studentName,
-      entry.questionText,
-      entry.category,
-      entry.bestAttempt?.score ?? "",
-      entry.latestAttempt?.score ?? "",
-      entry.attempts
-        .map(
-          (attempt, index) =>
-            `A${attempt.attemptNumber || index + 1}:${attempt.score ?? ""}`
-        )
-        .join(" | "),
-      entry.isMakeup ? "Yes" : "No",
-      formatDate(entry.latestAttempt?.completedAt || entry.latestAttempt?.createdAt)
-    ]);
+    const rows = filtered.map((entry) => {
+      const noteRow = notesLookup[entry.studentId] || notesLookup[entry.studentName];
+
+      return [
+        entry.studentName,
+        entry.questionText,
+        entry.category,
+        entry.bestAttempt?.score ?? "",
+        entry.latestAttempt?.score ?? "",
+        entry.attempts
+          .map(
+            (attempt, index) =>
+              `A${attempt.attemptNumber || index + 1}:${attempt.score ?? ""}`
+          )
+          .join(" | "),
+        entry.isMakeup ? "Yes" : "No",
+        formatDate(entry.latestAttempt?.completedAt || entry.latestAttempt?.createdAt),
+        noteRow?.followUp ? "Yes" : "No",
+        noteRow?.note || ""
+      ];
+    });
 
     const csv = [headers, ...rows]
       .map((row) => row.map(csvEscape).join(","))
@@ -165,6 +185,61 @@ export default function GradebookPanel({
     const link = document.createElement("a");
     link.href = url;
     link.download = "thinkoutloud-gradebook.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportSummaryReport = () => {
+    const totalResponses = analytics?.totalResponses || responses.length;
+    const averageScore = totalResponses
+      ? (
+          responses.reduce((sum, response) => sum + Number(response.score || 0), 0) /
+          totalResponses
+        ).toFixed(2)
+      : "0.00";
+    const followUpRows = studentNotes.filter((noteRow) => noteRow.followUp);
+
+    const summaryRows = [
+      ["Class", className],
+      ["Generated", new Date().toLocaleString()],
+      ["Roster Count", roster.length],
+      ["Visible Gradebook Records", filtered.length],
+      ["Total Responses", totalResponses],
+      ["Average Score", `${averageScore} / 3`],
+      ["Students Flagged for Follow-Up", followUpRows.length]
+    ];
+
+    const studentRows = filtered.map((entry) => {
+      const noteRow = notesLookup[entry.studentId] || notesLookup[entry.studentName];
+      return [
+        entry.studentName,
+        entry.category,
+        entry.questionText,
+        entry.bestAttempt?.score ?? "",
+        entry.latestAttempt?.score ?? "",
+        entry.attempts.length,
+        noteRow?.followUp ? "Yes" : "No",
+        noteRow?.note || ""
+      ];
+    });
+
+    const csvSections = [
+      ["Summary", ""],
+      ...summaryRows,
+      ["", ""],
+      ["Student", "Category", "Question", "Best Score", "Latest Score", "Attempts", "Follow-Up", "Teacher Note"],
+      ...studentRows
+    ];
+
+    const csv = csvSections
+      .map((row) => row.map(csvEscape).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "thinkoutloud-summary-report.csv";
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -192,7 +267,10 @@ export default function GradebookPanel({
           </div>
 
           <button onClick={exportVisibleRows} style={styles.exportButton}>
-            Export CSV
+            Export Gradebook CSV
+          </button>
+          <button onClick={exportSummaryReport} style={styles.exportButtonSecondary}>
+            Export Summary Report
           </button>
         </div>
 
@@ -329,6 +407,15 @@ const styles = {
   },
   exportButton: {
     background: "#228be6",
+    color: "white",
+    border: "none",
+    borderRadius: 8,
+    padding: "10px 14px",
+    fontWeight: 700,
+    cursor: "pointer"
+  },
+  exportButtonSecondary: {
+    background: "#495057",
     color: "white",
     border: "none",
     borderRadius: 8,

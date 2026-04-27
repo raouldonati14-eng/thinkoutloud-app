@@ -1,35 +1,14 @@
 // ✅ CreateClass.jsx (UPGRADED + PRODUCTION READY)
 
 import React, { useState } from "react";
-import { db, auth } from "../../firebase";
-import { collection, addDoc, doc, getDoc, setDoc } from "firebase/firestore";
+import { auth } from "../../firebase";
+import { createClassWithCode } from "../../utils/createClassWithCode";
 
 export default function CreateClass() {
 
   const [className, setClassName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(false);
-
-  // 🔥 safer code generator (avoids duplicates)
-  const generateCode = () => {
-    return Math.random().toString(36).substring(2, 7).toUpperCase();
-  };
-
-  const generateUniqueCode = async () => {
-    let code;
-    let exists = true;
-
-    while (exists) {
-      code = generateCode();
-
-      const ref = doc(db, "joinCodes", code);
-      const snap = await getDoc(ref);
-
-      exists = snap.exists();
-    }
-
-    return code;
-  };
 
 const createClass = async () => {
 
@@ -47,43 +26,13 @@ const createClass = async () => {
 
     setLoading(true);
 
-    // 🔥 ensure unique join code
-    const code = await generateUniqueCode();
-
-    const classRef = await addDoc(collection(db, "classes"), {
-className: className.trim(),
-teacherId: auth.currentUser.uid,
-
-// 🔥 SAFEST VERSION
-teacherName:
-  auth.currentUser?.displayName ||
-  auth.currentUser?.email ||
-  "Teacher",
-
-joinCode: code,
-createdAt: Date.now(),
-
-// ✅ CORE CLASS STATE
-active: true,
-classPhase: "instruction",
-lessonLocked: false,
-questionOpen: false,
-
-// 🔥 REQUIRED FOR QUESTIONS TO WORK
-category: "Drugs",
-currentLesson: 1,
-currentQuestion: 1,
-
-// 🔥 SESSION + FLOW
-activeSessionId: null,
-spotlightResponseId: null,
-
-// optional but useful
-currentQuestionIncrement: true
-    });
-
-    await setDoc(doc(db, "joinCodes", code), {
-      classId: classRef.id
+    const { joinCode: code } = await createClassWithCode({
+      className: className.trim(),
+      teacherId: auth.currentUser.uid,
+      teacherName:
+        auth.currentUser?.displayName ||
+        auth.currentUser?.email ||
+        "Teacher"
     });
 
     setJoinCode(code);

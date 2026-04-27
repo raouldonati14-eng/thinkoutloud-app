@@ -8,7 +8,7 @@ Your task is to evaluate a student’s spoken response compared to their written
 You must:
 1. Identify the key ideas in the written response
 2. Determine which of those ideas appear in the spoken response
-3. Evaluate completeness and understanding
+3. Evaluate completeness and understanding of the SPOKEN response
 4. Provide structured JSON output only
 
 Guidelines:
@@ -16,6 +16,7 @@ Guidelines:
 - Combine similar sentences into one idea if needed
 - Be tolerant of paraphrasing in the spoken response
 - Focus on meaning, not exact wording
+- Writing can support idea analysis and feedback, but it cannot replace spoken evidence for a top score
 - Do NOT include any explanation outside JSON
 
 Return JSON with:

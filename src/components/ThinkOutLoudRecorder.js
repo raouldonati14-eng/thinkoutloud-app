@@ -7,7 +7,7 @@ import {
   setDoc,
   updateDoc,
   collection,
-  addDoc,          // ✅ ADD THIS
+  addDoc,
   deleteDoc,
   onSnapshot,
   query,
@@ -103,19 +103,6 @@ const SCORE_RESPONSE_URL =
   process.env.REACT_APP_SCORE_RESPONSE_URL ||
   "https://us-central1-think-out-loud-40d3a.cloudfunctions.net/scoreResponse";
 
-const toMillis = (value) => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (value?.toMillis && typeof value.toMillis === "function") {
-    const millis = value.toMillis();
-    return Number.isFinite(millis) ? millis : null;
-  }
-
-  return null;
-};
-
 const BLOCKED_LANGUAGE = [
   "fuck", "fucking", "fucked", "fucker",
   "shit", "shitty", "shithead",
@@ -139,6 +126,19 @@ const WARN_LANGUAGE = [
   "douche", "douchebag",
   "badass"
 ];
+
+const toMillis = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (value?.toMillis && typeof value.toMillis === "function") {
+    const millis = value.toMillis();
+    return Number.isFinite(millis) ? millis : null;
+  }
+
+  return null;
+};
 
 const escapeForWordBoundary = (word) =>
   word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -176,14 +176,14 @@ function analyzeLanguage(text = "") {
     matches: []
   };
 }
+
 function highlightMissingIdeas(written, missingIdeas) {
   if (!written || !missingIdeas?.length) return written;
 
   let result = written;
 
   missingIdeas.forEach((idea) => {
-    const safeIdea = idea.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // escape regex
-
+    const safeIdea = idea.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const regex = new RegExp(`(${safeIdea})`, "gi");
 
     result = result.replace(
@@ -194,8 +194,10 @@ function highlightMissingIdeas(written, missingIdeas) {
 
   return result;
 }
+
 export default function ThinkOutLoudRecorder({
   student,
+  studentKey = null,
   questionId,
   questionText,
   category,
@@ -209,7 +211,6 @@ export default function ThinkOutLoudRecorder({
   onRecordingChange,
   onFinish
 }) {
-
   const [recording, setRecording] = useState(false);
   const [audioURL, setAudioURL] = useState(null);
   const [timer, setTimer] = useState(0);
@@ -235,6 +236,8 @@ export default function ThinkOutLoudRecorder({
   const processingTimeoutRef = useRef(null);
   const celebratedResponseRef = useRef(null);
   const recorderStorageKey = storageKeyBase ? `${storageKeyBase}:recorder` : null;
+  const studentRefKey = studentKey || student;
+
   const supportsSpeechRecognition = "webkitSpeechRecognition" in window;
   const supportsAudioRecording =
     !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
@@ -296,8 +299,8 @@ export default function ThinkOutLoudRecorder({
       setTranscript(parsed.transcript || "");
       setPhase(parsed.phase || "recording");
       setResponseData(parsed.responseData || null);
-    } catch (error) {
-      console.error("Failed to restore recorder state", error);
+    } catch (restoreError) {
+      console.error("Failed to restore recorder state", restoreError);
     }
   }, [recorderStorageKey]);
 
@@ -340,7 +343,10 @@ export default function ThinkOutLoudRecorder({
           id: responseDoc.id,
           ...responseDoc.data()
         }))
-        .filter((responseDoc) => responseDoc.studentId === student);
+        .filter(
+          (responseDoc) =>
+            responseDoc.studentKey === studentRefKey || responseDoc.studentId === student
+        );
 
       const completeAttempts = docs
         .filter((attempt) => attempt.status === "complete")
@@ -349,6 +355,10 @@ export default function ThinkOutLoudRecorder({
           score: attempt.score,
           feedback: attempt.feedback,
           analysis: attempt.analysis,
+          ideaCoverage: attempt.ideaCoverage,
+          missingIdeas: attempt.missingIdeas || [],
+          coveredIdeas: attempt.coveredIdeas || [],
+          ideaFeedback: attempt.ideaFeedback || "",
           attemptNumber: attempt.attemptNumber || index + 1
         }))
         .sort((a, b) => (a.attemptNumber || 0) - (b.attemptNumber || 0));
@@ -357,10 +367,12 @@ export default function ThinkOutLoudRecorder({
 
       const latest = docs.sort((a, b) => {
         const aTime =
+          toMillis(a.updatedAt) ??
           toMillis(a.completedAt) ??
           toMillis(a.createdAt) ??
           0;
         const bTime =
+          toMillis(b.updatedAt) ??
           toMillis(b.completedAt) ??
           toMillis(b.createdAt) ??
           0;
@@ -395,10 +407,11 @@ export default function ThinkOutLoudRecorder({
     });
 
     return () => unsubscribe();
-  }, [activeResponseId, audioURL, classId, phase, recording, sessionId, student]);
+  }, [activeResponseId, audioURL, classId, phase, recording, sessionId, student, studentRefKey]);
 
   useEffect(() => {
     if (!activeResponseId) return;
+
     const responseRef = doc(db, "responses", activeResponseId);
     const unsubscribe = onSnapshot(responseRef, (docSnap) => {
       if (!docSnap.exists()) return;
@@ -425,17 +438,24 @@ export default function ThinkOutLoudRecorder({
               score: data.score,
               feedback: data.feedback,
               analysis: data.analysis,
+              ideaCoverage: data.ideaCoverage,
+              missingIdeas: data.missingIdeas || [],
+              coveredIdeas: data.coveredIdeas || [],
+              ideaFeedback: data.ideaFeedback || "",
               attemptNumber: data.attemptNumber || next.length + 1
             }
           ].sort((a, b) => (a.attemptNumber || 0) - (b.attemptNumber || 0));
         });
+
         if (processingTimeoutRef.current) {
           clearTimeout(processingTimeoutRef.current);
           processingTimeoutRef.current = null;
         }
+
         if (onFinish) onFinish(data);
       }
     });
+
     return () => unsubscribe();
   }, [activeResponseId, onFinish, retryWindowMs]);
 
@@ -503,6 +523,11 @@ export default function ThinkOutLoudRecorder({
       clearTimeout(processingTimeoutRef.current);
       processingTimeoutRef.current = null;
     }
+    if (activeResponseId && responseData?.status !== "complete") {
+      deleteDoc(doc(db, "responses", activeResponseId)).catch((cleanupError) => {
+        console.error("Recorder cleanup error:", cleanupError);
+      });
+    }
     responseIdRef.current = null;
     setActiveResponseId(null);
     if (audioURL) {
@@ -560,6 +585,8 @@ export default function ThinkOutLoudRecorder({
       setActiveResponseId(responseIdRef.current);
     }
 
+    const responseRef = doc(db, "responses", responseIdRef.current);
+
     if (supportsSpeechRecognition) {
       const recognition = new window.webkitSpeechRecognition();
       recognition.continuous = true;
@@ -587,6 +614,7 @@ export default function ThinkOutLoudRecorder({
           autoGainControl: true
         }
       });
+
       const recorder = new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
@@ -600,9 +628,11 @@ export default function ThinkOutLoudRecorder({
       setPhase("recording");
       setResponseData(null);
       setActiveResponseId(responseIdRef.current);
+
       if (audioURL) {
         URL.revokeObjectURL(audioURL);
       }
+
       setAudioURL(null);
       setTranscript("");
       setIsSubmitting(false);
@@ -622,6 +652,14 @@ export default function ThinkOutLoudRecorder({
         wavesurferRef.current?.load(url);
         recognitionRef.current?.stop();
         stream.getTracks().forEach((track) => track.stop());
+        updateDoc(responseRef, {
+          status: "recorded",
+          transcript: transcript || "",
+          writtenResponse: writtenResponse || "",
+          updatedAt: serverTimestamp()
+        }).catch((recordedError) => {
+          console.error("Recording status update error:", recordedError);
+        });
       };
 
       recorder.start();
@@ -632,9 +670,36 @@ export default function ThinkOutLoudRecorder({
       }, 1000);
 
       await setDoc(
-        doc(db, "classes", classId, "sessions", sessionId, "recording", student),
-        { student, startedAt: serverTimestamp() }
+        responseRef,
+        {
+          studentId: student,
+          studentName: student,
+          studentKey: studentRefKey,
+          classId,
+          sessionId,
+          responseLanguage: studentLanguage || "en",
+          attemptNumber: attempts.length + 1,
+          questionId: questionId || null,
+          category: category || null,
+          transcript: "",
+          writtenResponse: writtenResponse || "",
+          status: "recording",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
       );
+
+      await setDoc(
+        doc(db, "classes", classId, "sessions", sessionId, "recording", studentRefKey),
+        {
+          student,
+          studentKey: studentRefKey,
+          startedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }
+      );
+
       logClientEvent("student_recording_started", {
         classId,
         sessionId,
@@ -660,10 +725,17 @@ export default function ThinkOutLoudRecorder({
   const stopRecording = async () => {
     setStatusMessage("Finishing recording...");
     mediaRecorderRef.current?.stop();
+
     try {
       await deleteDoc(
-        doc(db, "classes", classId, "sessions", sessionId, "recording", student)
+        doc(db, "classes", classId, "sessions", sessionId, "recording", studentRefKey)
       );
+      if (responseIdRef.current) {
+        await updateDoc(doc(db, "responses", responseIdRef.current), {
+          status: "recorded",
+          updatedAt: serverTimestamp()
+        });
+      }
       logClientEvent("student_recording_stopped", {
         classId,
         sessionId,
@@ -683,8 +755,8 @@ export default function ThinkOutLoudRecorder({
       return;
     }
     if (!classId || !student) return;
-    const combinedText = `${transcript} ${writtenResponse}`;
 
+    const combinedText = `${transcript} ${writtenResponse}`;
     const languageReview = analyzeLanguage(combinedText);
 
     if (languageReview.severity === "block") {
@@ -694,6 +766,7 @@ export default function ThinkOutLoudRecorder({
 
       logClientEvent("profanity_detected", {
         studentId: student,
+        studentKey: studentRefKey,
         classId,
         sessionId,
         transcript,
@@ -708,6 +781,7 @@ export default function ThinkOutLoudRecorder({
         matches: languageReview.matches,
         studentId: student,
         studentName: student,
+        studentKey: studentRefKey,
         classId,
         sessionId,
         transcript: transcript || "",
@@ -721,6 +795,7 @@ export default function ThinkOutLoudRecorder({
     if (languageReview.severity === "warn") {
       logClientEvent("language_warning_detected", {
         studentId: student,
+        studentKey: studentRefKey,
         classId,
         sessionId,
         transcript,
@@ -735,6 +810,7 @@ export default function ThinkOutLoudRecorder({
         matches: languageReview.matches,
         studentId: student,
         studentName: student,
+        studentKey: studentRefKey,
         classId,
         sessionId,
         transcript: transcript || "",
@@ -760,14 +836,16 @@ export default function ThinkOutLoudRecorder({
         const response = await fetch(audioURL);
         const blob = await response.blob();
         uploadedAudioURL = await audioRepository.uploadAudio(
-          blob, classId, sessionId, responseId
+          blob,
+          classId,
+          sessionId,
+          responseId
         );
       }
 
-      console.log("SUBMIT DATA", { studentId: student, sessionId, audioUrl: uploadedAudioURL });
-
       await setDoc(responseRef, {
         studentId: student,
+        studentKey: studentRefKey,
         classId,
         sessionId,
         responseLanguage: studentLanguage || "en",
@@ -782,6 +860,7 @@ export default function ThinkOutLoudRecorder({
         updatedAt: serverTimestamp(),
         status: "processing"
       });
+
       logClientEvent("student_response_saved_for_scoring", {
         classId,
         sessionId,
@@ -792,7 +871,9 @@ export default function ThinkOutLoudRecorder({
       setPhase("processing");
       setStatusMessage("Response submitted. Preparing feedback...");
 
-      if (processingTimeoutRef.current) clearTimeout(processingTimeoutRef.current);
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+      }
 
       processingTimeoutRef.current = setTimeout(() => {
         setError("Your response is saved. Feedback is taking longer than expected, but it is still processing.");
@@ -830,7 +911,7 @@ export default function ThinkOutLoudRecorder({
 
       setTimeout(async () => {
         try {
-         await updateDoc(responseRef, {
+          await updateDoc(responseRef, {
             status: "complete",
             score: assessment.score,
             feedback: assessment.feedback,
@@ -843,6 +924,7 @@ export default function ThinkOutLoudRecorder({
             completedAt: serverTimestamp(),
             updatedAt: serverTimestamp()
           });
+
           logClientEvent("student_response_scored", {
             classId,
             sessionId,
@@ -907,7 +989,6 @@ export default function ThinkOutLoudRecorder({
         }
       `}</style>
 
-      {/* ── Attempts summary bar ── */}
       {attempts.length > 0 && (
         <div
           style={{
@@ -928,14 +1009,13 @@ export default function ThinkOutLoudRecorder({
         </div>
       )}
 
-      {/* ── Recording timer ── */}
       {recording && (
         <div style={{ marginBottom: 12, fontWeight: "bold" }}>
           <T text="Local recording:" lang={studentLanguage} />{" "}
           {Math.floor(timer / 60)}:{(timer % 60).toString().padStart(2, "0")}
           {timer < MAX_RECORDING_TIME && (
             <span style={{ fontSize: 13, fontWeight: 400, color: "#868e96", marginLeft: 8 }}>
-              ({MAX_RECORDING_TIME - timer}s remaining)
+              ({MAX_RECORDING_TIME - timer}s until minimum)
             </span>
           )}
           {timer >= MAX_RECORDING_TIME && (
@@ -944,17 +1024,18 @@ export default function ThinkOutLoudRecorder({
             </span>
           )}
           <div style={{ marginTop: 6, height: 6, borderRadius: 3, background: "#e9ecef", overflow: "hidden" }}>
-            <div style={{
-              height: "100%",
-              width: `${Math.min((timer / MAX_RECORDING_TIME) * 100, 100)}%`,
-              background: timer >= MAX_RECORDING_TIME ? "#2f9e44" : "#4dabf7",
-              transition: "width 1s linear, background 0.5s"
-            }} />
+            <div
+              style={{
+                height: "100%",
+                width: `${Math.min((timer / MAX_RECORDING_TIME) * 100, 100)}%`,
+                background: timer >= MAX_RECORDING_TIME ? "#2f9e44" : "#4dabf7",
+                transition: "width 1s linear, background 0.5s"
+              }}
+            />
           </div>
         </div>
       )}
 
-      {/* ── Ready to submit notice ── */}
       {!recording && audioURL && phase !== "feedback" && (
         <div style={{ marginBottom: 12, color: "#555" }}>
           <T text="Recording captured and ready to submit." lang={studentLanguage} />
@@ -963,21 +1044,18 @@ export default function ThinkOutLoudRecorder({
 
       <div ref={waveformRef} />
 
-      {/* ── Start button ── */}
       {!recording && !audioURL && phase !== "processing" && phase !== "feedback" && canAttemptAgain && (
         <button onClick={startRecording} style={primaryButtonStyle}>
           <T text="Start" lang={studentLanguage} />
         </button>
       )}
 
-      {/* ── Stop button (before minimum) ── */}
       {recording && timer < MAX_RECORDING_TIME && (
         <button onClick={stopRecording} style={secondaryButtonStyle}>
           <T text="Stop" lang={studentLanguage} />
         </button>
       )}
 
-      {/* ── Stop & Submit button (after minimum met) ── */}
       {recording && timer >= MAX_RECORDING_TIME && (
         <button
           onClick={stopRecording}
@@ -991,7 +1069,6 @@ export default function ThinkOutLoudRecorder({
         </button>
       )}
 
-      {/* ── Submit button (after stopping) ── */}
       {audioURL && phase !== "feedback" && (
         <button disabled={isSubmitting} onClick={finalizeResponse}>
           {isSubmitting ? (
@@ -1002,26 +1079,24 @@ export default function ThinkOutLoudRecorder({
         </button>
       )}
 
-      {/* ── Status / error ── */}
       {statusMessage && (
         <div style={{ marginTop: 12 }}>
           <T text={statusMessage} lang={studentLanguage} />
         </div>
       )}
+
       {error && (
         <div style={{ marginTop: 8, color: "#c92a2a" }}>
           <T text={error} lang={studentLanguage} />
         </div>
       )}
 
-      {/* ── Audio playback (pre-submit) ── */}
       {audioURL && phase !== "feedback" && (
         <div style={{ marginTop: 16 }}>
           <audio controls src={audioURL} style={{ width: "100%" }} />
         </div>
       )}
 
-      {/* ── Processing state ── */}
       {phase === "processing" && (
         <T text="Processing your response and preparing feedback..." lang={studentLanguage} />
       )}
@@ -1041,7 +1116,6 @@ export default function ThinkOutLoudRecorder({
         </button>
       )}
 
-      {/* ── Feedback panel ── */}
       {phase === "feedback" && responseData?.status === "complete" && (
         <div
           style={{
@@ -1061,13 +1135,19 @@ export default function ThinkOutLoudRecorder({
             <>
               <div
                 style={{
-                  position: "absolute", inset: 0, pointerEvents: "none",
+                  position: "absolute",
+                  inset: 0,
+                  pointerEvents: "none",
                   background: "radial-gradient(circle at top, rgba(255, 236, 153, 0.7), transparent 52%), radial-gradient(circle at bottom right, rgba(255, 169, 77, 0.18), transparent 36%)"
                 }}
               />
               <div
                 style={{
-                  position: "absolute", top: -120, right: -80, width: 260, height: 260,
+                  position: "absolute",
+                  top: -120,
+                  right: -80,
+                  width: 260,
+                  height: 260,
                   borderRadius: "50%",
                   background: "radial-gradient(circle, rgba(255,255,255,0.55), transparent 62%)",
                   pointerEvents: "none"
@@ -1080,20 +1160,27 @@ export default function ThinkOutLoudRecorder({
                     position: "absolute",
                     top: burstIndex === 0 ? "22%" : burstIndex === 1 ? "16%" : "24%",
                     left: burstIndex === 0 ? "16%" : burstIndex === 1 ? "50%" : "84%",
-                    width: 12, height: 12, pointerEvents: "none"
+                    width: 12,
+                    height: 12,
+                    pointerEvents: "none"
                   }}
                 >
                   {Array.from({ length: 12 }).map((_, particleIndex) => {
                     const angle = (Math.PI * 2 * particleIndex) / 12;
                     const distance = 58 + burstIndex * 12;
                     const colors = ["#ff922b", "#ffd43b", "#fa5252", "#4dabf7", "#12b886"];
+
                     return (
                       <span
                         key={`particle-${burstIndex}-${particleIndex}`}
                         style={{
                           "--dx": `${Math.cos(angle) * distance}px`,
                           "--dy": `${Math.sin(angle) * distance}px`,
-                          position: "absolute", top: 0, left: 0, width: 8, height: 8,
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: 8,
+                          height: 8,
                           borderRadius: "50%",
                           background: colors[(burstIndex + particleIndex) % colors.length],
                           boxShadow: "0 0 14px rgba(255, 212, 59, 0.75)",
@@ -1112,9 +1199,13 @@ export default function ThinkOutLoudRecorder({
                     top: 54 + index * 30,
                     left: index % 2 === 0 ? 24 : "auto",
                     right: index % 2 === 1 ? 24 : "auto",
-                    padding: "4px 10px", borderRadius: 999,
-                    background: "rgba(255,255,255,0.7)", color: "#7a4e00",
-                    fontWeight: 700, fontSize: 12, letterSpacing: 0.3,
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    background: "rgba(255,255,255,0.7)",
+                    color: "#7a4e00",
+                    fontWeight: 700,
+                    fontSize: 12,
+                    letterSpacing: 0.3,
                     pointerEvents: "none",
                     animation: `tol-ribbon-float 1300ms ease-out ${index * 110}ms forwards`
                   }}
@@ -1124,9 +1215,15 @@ export default function ThinkOutLoudRecorder({
               ))}
               <div
                 style={{
-                  position: "absolute", top: 16, right: 16,
-                  padding: "6px 10px", borderRadius: 999,
-                  background: "#2f9e44", color: "white", fontWeight: 700, letterSpacing: 0.3
+                  position: "absolute",
+                  top: 16,
+                  right: 16,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  background: "#2f9e44",
+                  color: "white",
+                  fontWeight: 700,
+                  letterSpacing: 0.3
                 }}
               >
                 Perfect Score
@@ -1143,11 +1240,16 @@ export default function ThinkOutLoudRecorder({
           {responseData.score === 3 && (
             <div
               style={{
-                display: "inline-flex", alignItems: "center", gap: 10,
-                marginBottom: 14, padding: "10px 16px", borderRadius: 999,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 14,
+                padding: "10px 16px",
+                borderRadius: 999,
                 background: "rgba(255,255,255,0.72)",
                 border: "1px solid rgba(255, 212, 59, 0.75)",
-                color: "#7a4e00", fontWeight: 800,
+                color: "#7a4e00",
+                fontWeight: 800,
                 animation: "tol-score-glow 1.8s ease-in-out infinite"
               }}
             >
@@ -1180,9 +1282,12 @@ export default function ThinkOutLoudRecorder({
                   <span
                     key={word}
                     style={{
-                      padding: "6px 10px", borderRadius: 999,
-                      background: "#e7f5ff", color: "#1864ab",
-                      fontWeight: 600, fontSize: 14
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      background: "#e7f5ff",
+                      color: "#1864ab",
+                      fontWeight: 600,
+                      fontSize: 14
                     }}
                   >
                     {word}
@@ -1199,80 +1304,88 @@ export default function ThinkOutLoudRecorder({
             </div>
           )}
 
-          {transcript && (
+          {writtenResponse && (
             <div style={{ marginTop: 20 }}>
-              <h3><T text="Your Response" lang={studentLanguage} /></h3>
+              <h3><T text="Your Written Response" lang={studentLanguage} /></h3>
               <div
-  dangerouslySetInnerHTML={{
-    __html: highlightMissingIdeas(
-      writtenResponse,
-      responseData?.missingIdeas || []
-    )
-  }}
-/>
-         {/* ── Written response ── */}
-         {writtenResponse && (
-  <div style={{ marginTop: 20 }}>
-    <h3><T text="Your Written Response" lang={studentLanguage} /></h3>
-    <div
-      style={{
-        background: "#f8f9fa",
-        padding: 14,
-        borderRadius: 8,
-        fontSize: 14,
-        lineHeight: 1.6,
-        border: "1px solid #e9ecef"
-      }}
-    >
-      <div
-        dangerouslySetInnerHTML={{
-          __html: highlightMissingIdeas(
-            writtenResponse,
-            responseData.missingIdeas
-          )
-        }}
-      />
-    </div>
-  </div>
-)}
+                style={{
+                  background: "#f8f9fa",
+                  padding: 14,
+                  borderRadius: 8,
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  border: "1px solid #e9ecef"
+                }}
+              >
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: highlightMissingIdeas(
+                      writtenResponse,
+                      responseData?.missingIdeas || []
+                    )
+                  }}
+                />
               </div>
+            </div>
           )}
 
-          {/* ── Spoken response ── */}
           {transcript && (
             <div style={{ marginTop: 20 }}>
               <h3><T text="Your Spoken Response" lang={studentLanguage} /></h3>
-              <div style={{ background: "#f8f9fa", padding: 14, borderRadius: 8, fontSize: 14, lineHeight: 1.6, border: "1px solid #e9ecef" }}>
+              <div
+                style={{
+                  background: "#f8f9fa",
+                  padding: 14,
+                  borderRadius: 8,
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  border: "1px solid #e9ecef"
+                }}
+              >
                 <div dangerouslySetInnerHTML={{ __html: highlightReasoning(transcript) }} />
               </div>
             </div>
           )}
 
-          {/* ── Idea coverage (from GPT) ── */}
           {responseData.ideaCoverage && responseData.ideaCoverage.total > 0 && (
             <div style={{ marginTop: 20 }}>
               <h3><T text="Idea Coverage" lang={studentLanguage} /></h3>
-              <div style={{
-                padding: 14, borderRadius: 8, fontWeight: 600, fontSize: 15,
-                background: responseData.ideaCoverage.covered === responseData.ideaCoverage.total ? "#ebfbee" : "#fff9db",
-                border: `1px solid ${responseData.ideaCoverage.covered === responseData.ideaCoverage.total ? "#a9e34b" : "#ffd43b"}`
-              }}>
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  fontSize: 15,
+                  background:
+                    responseData.ideaCoverage.covered === responseData.ideaCoverage.total
+                      ? "#ebfbee"
+                      : "#fff9db",
+                  border: `1px solid ${
+                    responseData.ideaCoverage.covered === responseData.ideaCoverage.total
+                      ? "#a9e34b"
+                      : "#ffd43b"
+                  }`
+                }}
+              >
                 {responseData.ideaCoverage.covered} / {responseData.ideaCoverage.total}{" "}
                 <T text="key ideas covered" lang={studentLanguage} />
               </div>
               {responseData.ideaFeedback && (
-                <p style={{ marginTop: 10, fontSize: 14, color: "#495057" }}>{responseData.ideaFeedback}</p>
+                <p style={{ marginTop: 10, fontSize: 14, color: "#495057" }}>
+                  {responseData.ideaFeedback}
+                </p>
               )}
             </div>
           )}
 
-          {/* ── Missing ideas (from GPT) ── */}
           {responseData.missingIdeas?.length > 0 && (
             <div style={{ marginTop: 16 }}>
               <h3><T text="Ideas to Add Next Time" lang={studentLanguage} /></h3>
               <ul style={{ paddingLeft: 20, margin: 0 }}>
                 {responseData.missingIdeas.map((idea, i) => (
-                  <li key={i} style={{ marginBottom: 6, fontSize: 14, color: "#495057" }}>{idea}</li>
+                  <li key={i} style={{ marginBottom: 6, fontSize: 14, color: "#495057" }}>
+                    {idea}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -1290,14 +1403,12 @@ export default function ThinkOutLoudRecorder({
         </div>
       )}
 
-      {/* ── Retry window expired notice ── */}
       {!retryWindowActive && attempts.length > 0 && phase !== "feedback" && (
         <div style={{ marginTop: 16, color: "#555" }}>
           <T text="Your 15-minute revision window has ended." lang={studentLanguage} />
         </div>
       )}
 
-     {/* ── Max attempts notice ── */}
       {attempts.length >= maxAttempts && phase !== "feedback" && (
         <div style={{ marginTop: 16, color: "#555" }}>
           <T text="You have used all 3 attempts." lang={studentLanguage} />
